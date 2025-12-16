@@ -1,0 +1,91 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RB0120Desktop", "RB0120Desktop\RB0120Desktop.csproj", "{5996FEF3-FE36-4EAE-B475-D324714B2243}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "rpa-web-ui", "rpa-web-ui", "{A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D}"
+	ProjectSection(SolutionItems) = preProject
+		rpa-web-ui\package.json = rpa-web-ui\package.json
+		rpa-web-ui\vite.config.ts = rpa-web-ui\vite.config.ts
+		rpa-web-ui\tsconfig.json = rpa-web-ui\tsconfig.json
+		rpa-web-ui\tsconfig.node.json = rpa-web-ui\tsconfig.node.json
+		rpa-web-ui\README.md = rpa-web-ui\README.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{B1C2D3E4-F5A6-4B5C-8D9E-0F1A2B3C4D5E}"
+	ProjectSection(SolutionItems) = preProject
+		rpa-web-ui\src\index.ts = rpa-web-ui\src\index.ts
+		rpa-web-ui\src\plugin.ts = rpa-web-ui\src\plugin.ts
+		rpa-web-ui\src\vue-virtual-scroller.d.ts = rpa-web-ui\src\vue-virtual-scroller.d.ts
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "components", "components", "{C2D3E4F5-A6B7-4C5D-8E9F-0A1B2C3D4E5F}"
+	ProjectSection(SolutionItems) = preProject
+		rpa-web-ui\src\components\DataGrid\DataGrid.vue = rpa-web-ui\src\components\DataGrid\DataGrid.vue
+		rpa-web-ui\src\components\ListBox\ListBox.vue = rpa-web-ui\src\components\ListBox\ListBox.vue
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "composables", "composables", "{D3E4F5A6-B7C8-4D5E-8F9A-0B1C2D3E4F5A}"
+	ProjectSection(SolutionItems) = preProject
+		rpa-web-ui\src\composables\useFiltering.ts = rpa-web-ui\src\composables\useFiltering.ts
+		rpa-web-ui\src\composables\useSorting.ts = rpa-web-ui\src\composables\useSorting.ts
+		rpa-web-ui\src\composables\useValidation.ts = rpa-web-ui\src\composables\useValidation.ts
+		rpa-web-ui\src\composables\useSearch.ts = rpa-web-ui\src\composables\useSearch.ts
+		rpa-web-ui\src\composables\useSelection.ts = rpa-web-ui\src\composables\useSelection.ts
+		rpa-web-ui\src\composables\useCopyPaste.ts = rpa-web-ui\src\composables\useCopyPaste.ts
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "stores", "stores", "{E4F5A6B7-C8D9-4E5F-8A9B-0C1D2E3F4A5B}"
+	ProjectSection(SolutionItems) = preProject
+		rpa-web-ui\src\stores\dataGridStore.ts = rpa-web-ui\src\stores\dataGridStore.ts
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "types", "types", "{F5A6B7C8-D9E0-4F5A-8B9C-0D1E2F3A4B5C}"
+	ProjectSection(SolutionItems) = preProject
+		rpa-web-ui\src\types\grid.ts = rpa-web-ui\src\types\grid.ts
+		rpa-web-ui\src\types\theme.ts = rpa-web-ui\src\types\theme.ts
+		rpa-web-ui\src\types\index.ts = rpa-web-ui\src\types\index.ts
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "services", "services", "{A6B7C8D9-E0F1-4A5B-8C9D-0E1F2A3B4C5D}"
+	ProjectSection(SolutionItems) = preProject
+		rpa-web-ui\src\services\gridApi.ts = rpa-web-ui\src\services\gridApi.ts
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5996FEF3-FE36-4EAE-B475-D324714B2243}.Debug|Any CPU.ActiveCfg = Debug|x86
+		{5996FEF3-FE36-4EAE-B475-D324714B2243}.Debug|Any CPU.Build.0 = Debug|x86
+		{5996FEF3-FE36-4EAE-B475-D324714B2243}.Debug|x64.ActiveCfg = Debug|x64
+		{5996FEF3-FE36-4EAE-B475-D324714B2243}.Debug|x64.Build.0 = Debug|x64
+		{5996FEF3-FE36-4EAE-B475-D324714B2243}.Debug|x86.ActiveCfg = Debug|x86
+		{5996FEF3-FE36-4EAE-B475-D324714B2243}.Debug|x86.Build.0 = Debug|x86
+		{5996FEF3-FE36-4EAE-B475-D324714B2243}.Release|Any CPU.ActiveCfg = Release|x86
+		{5996FEF3-FE36-4EAE-B475-D324714B2243}.Release|Any CPU.Build.0 = Release|x86
+		{5996FEF3-FE36-4EAE-B475-D324714B2243}.Release|x64.ActiveCfg = Release|x64
+		{5996FEF3-FE36-4EAE-B475-D324714B2243}.Release|x64.Build.0 = Release|x64
+		{5996FEF3-FE36-4EAE-B475-D324714B2243}.Release|x86.ActiveCfg = Release|x86
+		{5996FEF3-FE36-4EAE-B475-D324714B2243}.Release|x86.Build.0 = Release|x86
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{B1C2D3E4-F5A6-4B5C-8D9E-0F1A2B3C4D5E} = {A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D}
+		{C2D3E4F5-A6B7-4C5D-8E9F-0A1B2C3D4E5F} = {B1C2D3E4-F5A6-4B5C-8D9E-0F1A2B3C4D5E}
+		{D3E4F5A6-B7C8-4D5E-8F9A-0B1C2D3E4F5A} = {B1C2D3E4-F5A6-4B5C-8D9E-0F1A2B3C4D5E}
+		{E4F5A6B7-C8D9-4E5F-8A9B-0C1D2E3F4A5B} = {B1C2D3E4-F5A6-4B5C-8D9E-0F1A2B3C4D5E}
+		{F5A6B7C8-D9E0-4F5A-8B9C-0D1E2F3A4B5C} = {B1C2D3E4-F5A6-4B5C-8D9E-0F1A2B3C4D5E}
+		{A6B7C8D9-E0F1-4A5B-8C9D-0E1F2A3B4C5D} = {B1C2D3E4-F5A6-4B5C-8D9E-0F1A2B3C4D5E}
+	EndGlobalSection
+EndGlobal

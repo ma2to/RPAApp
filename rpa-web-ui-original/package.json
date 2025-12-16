@@ -1,0 +1,31 @@
+{
+  "name": "rpa-advanced-table-frontend",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:lib": "vite build --config vite.config.lib.ts",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@imengyu/vue3-context-menu": "^1.5.2",
+    "@microsoft/signalr": "^8.0.0",
+    "@vueuse/core": "^10.7.0",
+    "axios": "^1.6.2",
+    "mitt": "^3.0.1",
+    "pinia": "^2.1.7",
+    "vue": "^3.4.0",
+    "vue-virtual-scroller": "^2.0.0-beta.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "terser": "^5.44.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.8",
+    "vite-plugin-dts": "^4.5.4",
+    "vue-tsc": "^3.1.5"
+  }
+}

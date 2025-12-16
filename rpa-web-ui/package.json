@@ -1,0 +1,59 @@
+{
+  "name": "rpa-web-ui",
+  "version": "1.0.0",
+  "description": "Advanced data grid and listbox components for Vue 3 with TypeScript support",
+  "type": "module",
+  "main": "./dist/rpa-web-ui.umd.js",
+  "module": "./dist/rpa-web-ui.es.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/rpa-web-ui.es.js",
+      "require": "./dist/rpa-web-ui.umd.js"
+    },
+    "./dist/style.css": "./dist/style.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "vue",
+    "vue3",
+    "datagrid",
+    "table",
+    "listbox",
+    "typescript",
+    "rpa",
+    "component",
+    "ui"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/rpa-advanced-table"
+  },
+  "peerDependencies": {
+    "vue": "^3.3.0",
+    "pinia": "^2.1.0"
+  },
+  "dependencies": {
+    "@imengyu/vue3-context-menu": "^1.5.2",
+    "@vueuse/core": "^10.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.8",
+    "vue-tsc": "^3.1.5"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:lib": "vue-tsc --declaration --emitDeclarationOnly --skipLibCheck && vite build --config vite.config.lib.ts",
+    "build:lib:fast": "vite build --config vite.config.lib.ts",
+    "preview": "vite preview"
+  }
+}

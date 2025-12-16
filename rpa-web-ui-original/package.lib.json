@@ -1,0 +1,58 @@
+{
+  "name": "@rpa/advanced-table",
+  "version": "1.0.0",
+  "description": "Advanced data grid and listbox components for Vue 3 with TypeScript support",
+  "type": "module",
+  "main": "./dist/rpa-advanced-table.umd.js",
+  "module": "./dist/rpa-advanced-table.es.js",
+  "types": "./dist/rpa-advanced-table.es.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/rpa-advanced-table.es.d.ts",
+      "import": "./dist/rpa-advanced-table.es.js",
+      "require": "./dist/rpa-advanced-table.umd.js"
+    },
+    "./dist/style.css": "./dist/rpa-advanced-table.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "vue",
+    "vue3",
+    "datagrid",
+    "table",
+    "listbox",
+    "typescript",
+    "rpa",
+    "component",
+    "ui"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/rpa-advanced-table"
+  },
+  "peerDependencies": {
+    "vue": "^3.3.0",
+    "pinia": "^2.1.0"
+  },
+  "dependencies": {
+    "@imengyu/vue3-context-menu": "^1.5.2",
+    "@vueuse/core": "^10.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.8",
+    "vue-tsc": "^3.1.5"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:lib": "vue-tsc --declaration --emitDeclarationOnly && vite build --config vite.config.lib.ts",
+    "preview": "vite preview"
+  }
+}

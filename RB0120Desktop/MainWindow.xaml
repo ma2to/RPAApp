@@ -1,0 +1,14 @@
+<Window
+    x:Class="RB0120Desktop.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="RB0120 Desktop">
+
+    <Grid>
+        <!-- Source will be set in code-behind -->
+        <WebView2 x:Name="webView" Source="about:blank" />
+    </Grid>
+</Window>
