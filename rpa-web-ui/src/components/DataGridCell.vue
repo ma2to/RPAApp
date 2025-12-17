@@ -49,8 +49,7 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, inject } from 'vue'
-import { storeToRefs } from 'pinia'
-import { useDataGridStore, type GridCell, type GridColumn } from '@/stores/dataGridStore'
+import { useDataGridStore, type GridCell, type GridColumn, type GridRow } from '@/stores/dataGridStore'
 import ContextMenu from '@imengyu/vue3-context-menu'
 
 const props = defineProps<{
@@ -72,7 +71,6 @@ const emit = defineEmits<{
 }>()
 
 const store = useDataGridStore(props.gridId)()
-const { isAutoRowHeightEnabled } = storeToRefs(store)
 
 // Inject validation from parent DataGrid component
 const validation = inject('validation', null) as ReturnType<typeof import('@/composables/useValidation').useValidation> | null
@@ -133,7 +131,7 @@ function escapeHtml(text: string): string {
 // Check for validation errors - access validationErrors directly for reactivity
 const validationError = computed(() => {
   const errors = validationErrors[props.cell.rowId] || []
-  return errors.find((e: any) => e.columnName === props.cell.columnName)
+  return errors.find((e: { columnName: string; message: string; severity: string }) => e.columnName === props.cell.columnName)
 })
 
 const cellClasses = computed(() => {
@@ -143,9 +141,9 @@ const cellClasses = computed(() => {
     'cell--validation-error': validationError.value?.severity === 'Error' || validationError.value?.severity === 'Critical',
     'cell--validation-warning': validationError.value?.severity === 'Warning' || validationError.value?.severity === 'Info',
     'cell--readonly': props.column.isReadOnly,
-    'cell--auto-height': isAutoRowHeightEnabled.value,
+    'cell--auto-height': store.isAutoRowHeightEnabled,
     // Special case: has newlines but AutoRowHeight is OFF - still wrap by newlines only
-    'cell--has-newlines': hasNewlines.value && !isAutoRowHeightEnabled.value
+    'cell--has-newlines': hasNewlines.value && !store.isAutoRowHeightEnabled
   }
 })
 
@@ -253,11 +251,11 @@ async function handleDoubleClick() {
 
 // Get all cells from the current row (for empty row check)
 function getRowCells() {
-  const row = store.rows.find(r => r.rowId === props.cell.rowId)
+  const row = store.rows.find((r: GridRow) => r.rowId === props.cell.rowId)
   if (!row) return undefined
 
   // Return array of { columnName, value } for all cells
-  return row.cells.map(c => ({ columnName: c.columnName, value: c.value }))
+  return row.cells.map((c: GridCell) => ({ columnName: c.columnName, value: c.value }))
 }
 
 function handleInput() {
@@ -432,9 +430,9 @@ function handleContextMenu(event: MouseEvent) {
 
   // Calculate selected row IDs and indices (like original component)
   const selectedRowData = new Map<string, number>() // rowId -> rowIndex
-  store.selectedCells.forEach(cellKey => {
+  store.selectedCells.forEach((cellKey: string) => {
     const [rowId] = cellKey.split(':')
-    const row = store.rows.find(r => r.rowId === rowId)
+    const row = store.rows.find((r: GridRow) => r.rowId === rowId)
     if (row) {
       selectedRowData.set(rowId, row.rowIndex)
     }
@@ -448,8 +446,8 @@ function handleContextMenu(event: MouseEvent) {
   const maxRowIndex = selectedRowIndices.length > 0 ? Math.max(...selectedRowIndices) : 0
 
   // Get rowId for min/max indices
-  const minRow = store.rows.find(r => r.rowIndex === minRowIndex)
-  const maxRow = store.rows.find(r => r.rowIndex === maxRowIndex)
+  const minRow = store.rows.find((r: GridRow) => r.rowIndex === minRowIndex)
+  const maxRow = store.rows.find((r: GridRow) => r.rowIndex === maxRowIndex)
 
   ContextMenu.showContextMenu({
     x: event.x,

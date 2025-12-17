@@ -38,8 +38,8 @@
           >
             <option value="">Select column...</option>
             <option
-              v-for="col in dataColumns"
-              :key="col.name"
+              v-for="(col, colIndex) in dataColumns"
+              :key="`col-${colIndex}`"
               :value="col.name"
             >
               {{ col.header }}
@@ -132,7 +132,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useDataGridStore } from '@/stores/dataGridStore'
+import { useDataGridStore, type GridColumn } from '@/stores/dataGridStore'
 import { type FilterOperator, type SimpleFilter } from '@/composables/useFiltering'
 
 const props = defineProps<{
@@ -160,7 +160,7 @@ const columnFilters = ref<ColumnFilter[]>([
 ])
 
 const dataColumns = computed(() => {
-  return store.columns.filter(col => !col.specialType)
+  return store.columns.filter((col: GridColumn) => !col.specialType)
 })
 
 const activeColumnFilters = computed(() => {
@@ -255,7 +255,7 @@ function toggleCollapse() {
 }
 
 function getColumnHeader(columnName: string): string {
-  const col = store.columns.find(c => c.name === columnName)
+  const col = store.columns.find((c: GridColumn) => c.name === columnName)
   return col?.header || columnName
 }
 </script>

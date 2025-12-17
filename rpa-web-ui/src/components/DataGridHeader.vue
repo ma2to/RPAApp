@@ -86,7 +86,7 @@ const resizeStartWidth = ref(0)
 const sortInfoMap = computed(() => {
   const map = new Map<string, { direction: 'asc' | 'desc'; order: number; isPrimary: boolean }>()
 
-  store.sortColumns.forEach((sortCol, index) => {
+  store.sortColumns.forEach((sortCol: { columnName: string; direction: 'asc' | 'desc' }, index: number) => {
     map.set(sortCol.columnName, {
       direction: sortCol.direction,
       order: index + 1,
@@ -251,7 +251,7 @@ function showHeaderContextMenu(event: MouseEvent, column: GridColumn) {
           label: `Remove from Sort (Order ${currentSort.order})`,
           icon: '✖',
           onClick: () => {
-            const newSorts = sortColumnsCopy.filter(s => s.columnName !== column.name)  // ✅ Use copy
+            const newSorts = sortColumnsCopy.filter((s: { columnName: string; direction: 'asc' | 'desc' }) => s.columnName !== column.name)  // ✅ Use copy
             store.setSortColumns(newSorts)
           }
         }

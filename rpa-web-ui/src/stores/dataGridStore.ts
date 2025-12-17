@@ -52,13 +52,23 @@ export interface GridConfig {
   minRowHeight?: number  // Minimum row height in pixels (default: 25)
 }
 
+// ✅ RIEŠENIE #2: Cache store definitions to prevent duplicate creation
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const storeCache = new Map<string, any>()
+
 export const useDataGridStore = (storeId: string = 'dataGrid') => {
   if (!storeId || typeof storeId !== 'string') {
     console.error('[useDataGridStore] Invalid storeId:', storeId)
     throw new Error(`Invalid storeId: ${storeId}`)
   }
 
-  console.log('[useDataGridStore] Creating store definition for:', storeId)
+  // ✅ RIEŠENIE #2: Check cache first
+  if (storeCache.has(storeId)) {
+    console.log('[useDataGridStore] Using CACHED store definition for:', storeId)
+    return storeCache.get(storeId)!
+  }
+
+  console.log('[useDataGridStore] Creating NEW store definition for:', storeId)
   const storeDefinition = defineStore(storeId, () => {
   // State
   // ✅ RIEŠENIE E: Map-based storage for O(1) lookup and thread-safety
@@ -208,9 +218,10 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
 
   // Actions
   // ✅ RIEŠENIE E: loadRows using Map structure
+  // ✅ RIEŠENIE #1: Filter empty rows (rows without data in visible columns)
   function loadRows(data: Record<string, any>[]) {
     console.log('[dataGridStore] loadRows:', {
-      rowCount: data.length,
+      originalRowCount: data.length,
       columnCount: columns.value.length,
       autoValidate: config.value.autoValidate
     })
@@ -218,13 +229,31 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
     const newMap = new Map<string, GridRow>()
     const newOrder: string[] = []
 
+    // ✅ RIEŠENIE #1: Get visible columns (for empty check)
+    const visibleColumns = columns.value.filter(col =>
+      !col.specialType && col.visibleForGrid !== false
+    )
+
+    let skippedEmptyRows = 0
+
     data.forEach((rowData, idx) => {
+      // ✅ RIEŠENIE #1: Check if row has at least one non-empty cell in VISIBLE columns
+      const hasVisibleData = visibleColumns.some(col => {
+        const value = rowData[col.name]
+        return value !== null && value !== undefined && value !== ''
+      })
+
+      if (!hasVisibleData) {
+        skippedEmptyRows++
+        return  // ✅ SKIP - row has no visible data
+      }
+
       const rowId = rowData.__rowId || generateULID()
       const height = rowData.__rowHeight || 40
 
       const row: GridRow = {
         rowId,
-        rowIndex: idx,
+        rowIndex: newOrder.length,  // ✅ Actual index after filtering
         height,
         cells: columns.value.map(col => ({
           rowId,
@@ -246,7 +275,10 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
     ensureMinimumRows()
 
     console.log('[dataGridStore] loadRows complete:', {
+      originalRows: data.length,
       loadedRows: rowsOrder.value.length,
+      skippedEmptyRows,
+      filterRate: `${Math.round((skippedEmptyRows / data.length) * 100)}%`,
       minRowsRequired: minRows.value,
       firstRowId: rowsOrder.value[0],
       firstRowCells: newMap.get(rowsOrder.value[0])?.cells.length
@@ -911,21 +943,44 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
   /**
    * Gets cells that need validation (unvalidated or changed since last validation)
    * SOLUTION 2: Enhanced logging to debug validation tracking
+   * ✅ RIEŠENIE #3: Filter columns WITHOUT validation rules (CRITICAL optimization)
    */
-  function getCellsNeedingValidation(forceValidateAll = false): { rowId: string; columnName: string }[] {
+  function getCellsNeedingValidation(
+    forceValidateAll: boolean = false,
+    columnsWithRules?: Set<string>  // ✅ RIEŠENIE #3: Optional parameter for columns with rules
+  ): { rowId: string; columnName: string }[] {
     console.log('[getCellsNeedingValidation] 🔍 START', {
       totalRows: rows.value.length,
       validatedCellsCount: validatedCells.value.size,
       changedCellsCount: changedCellsSinceValidation.value.size,
-      forceValidateAll
+      forceValidateAll,
+      hasColumnsWithRules: !!columnsWithRules
     })
 
-    // Get columns that should be validated (visibleForGrid !== false)
-    const columnsToValidate = new Set(
+    // ✅ RIEŠENIE #3: Get visible columns
+    const visibleColumns = new Set(
       columns.value
         .filter(col => col.visibleForGrid !== false)
         .map(col => col.name)
     )
+
+    // ✅ RIEŠENIE #3: If columnsWithRules provided AND not empty, intersect with visible columns
+    // Otherwise, validate ALL visible columns (backward compatible)
+    // ✅ FIX C: Check both existence AND size to avoid empty Set issue
+    const columnsToValidate = (columnsWithRules && columnsWithRules.size > 0)
+      ? new Set([...visibleColumns].filter(col => columnsWithRules.has(col)))
+      : visibleColumns
+
+    console.log('[getCellsNeedingValidation] 🔍 Column filtering:', {
+      totalColumns: columns.value.length,
+      visibleColumns: visibleColumns.size,
+      columnsWithRules: columnsWithRules?.size ?? 'N/A',
+      columnsToValidate: columnsToValidate.size,
+      skippedColumns: visibleColumns.size - columnsToValidate.size,
+      filterRate: columnsWithRules
+        ? `${Math.round((1 - columnsToValidate.size / visibleColumns.size) * 100)}% skipped`
+        : 'N/A (no filter)'
+    })
 
     const cellsToValidate: { rowId: string; columnName: string }[] = []
     let emptyRowsSkipped = 0
@@ -933,10 +988,12 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
     let changedCells = 0
     let neverValidatedCells = 0
     let skippedInvisibleCells = 0
+    let skippedNoRulesCells = 0  // ✅ RIEŠENIE #3: Track cells skipped due to no rules
 
     for (const row of rows.value) {
-      // ✅ RIEŠENIE #5: ALWAYS skip completely empty rows (even with forceValidateAll)
-      const isEmpty = row.cells.every(cell =>
+      // ✅ RIEŠENIE #2: Check if row is empty (only in VISIBLE columns)
+      const visibleCells = row.cells.filter(cell => columnsToValidate.has(cell.columnName))
+      const isEmpty = visibleCells.every(cell =>
         cell.value === null ||
         cell.value === undefined ||
         cell.value === ''
@@ -948,9 +1005,19 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
       }
 
       for (const cell of row.cells) {
-        // Skip cells for columns with visibleForGrid=false
-        if (!columnsToValidate.has(cell.columnName)) {
+        // ✅ RIEŠENIE #3: Track different skip reasons
+        const isVisible = visibleColumns.has(cell.columnName)
+        const hasRules = columnsWithRules ? columnsWithRules.has(cell.columnName) : true
+
+        // Skip invisible columns
+        if (!isVisible) {
           skippedInvisibleCells++
+          continue
+        }
+
+        // ✅ RIEŠENIE #3: Skip visible columns WITHOUT rules (if columnsWithRules provided)
+        if (columnsWithRules && !hasRules) {
+          skippedNoRulesCells++
           continue
         }
 
@@ -984,6 +1051,8 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
       changedSinceValidation: changedCells,
       alreadyValidated: alreadyValidatedCells,
       emptyRowsSkipped: emptyRowsSkipped,
+      skippedInvisibleCells: skippedInvisibleCells,
+      skippedNoRulesCells: skippedNoRulesCells,  // ✅ RIEŠENIE #3: CRITICAL METRIC!
       sampleCells: cellsToValidate.slice(0, 3).map(c => `${c.rowId}:${c.columnName}`)
     })
 
@@ -999,6 +1068,37 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
     minRows.value = newMinRows
     ensureMinimumRows()  // Immediately apply if current rows below new minimum
     console.log(`[dataGridStore] setMinRows: ${newMinRows}`)
+  }
+
+  // ✅ RIEŠENIE #3: Cleanup method to clear all data and prevent memory leaks
+  function clearAllData() {
+    console.log('[dataGridStore] clearAllData called - clearing all state')
+
+    // Clear row data
+    rowsMap.value.clear()
+    rowsOrder.value = []
+
+    // Clear selection state
+    selectedCells.value.clear()
+    checkedRows.value = []
+    pressedCell.value = null
+    isDragging.value = false
+    wasCtrlPressed.value = false
+
+    // Clear validation tracking
+    validatedCells.value.clear()
+    changedCellsSinceValidation.value.clear()
+
+    // Clear sort/filter state
+    sortColumnsMap.value.clear()
+    sortColumnsOrder.value = []
+    filterExpression.value = null
+    searchQuery.value = ''
+
+    // Reset pagination
+    currentPage.value = 1
+
+    console.log('[dataGridStore] All data cleared successfully')
   }
 
   return {
@@ -1060,9 +1160,14 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
     markCellValidated,
     clearValidationTracking,
     getCellsNeedingValidation,
-    setMinRows
+    setMinRows,
+    clearAllData  // ✅ RIEŠENIE #3: Export cleanup method
   }
   })
+
+  // ✅ RIEŠENIE #2: Cache the store definition before returning
+  storeCache.set(storeId, storeDefinition)
+  console.log('[useDataGridStore] Store definition cached for:', storeId)
 
   // Return StoreDefinition - let component call it
   return storeDefinition

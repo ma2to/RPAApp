@@ -18,6 +18,24 @@
       </div>
     </div>
 
+    <!-- ✅ RIEŠENIE #4: Loading overlay during data operations -->
+    <div v-if="loadingState.isLoading" class="loading-overlay">
+      <div class="loading-content">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">{{ loadingState.operation }}</div>
+
+        <!-- Progress bar if we have total count -->
+        <div v-if="loadingState.total > 0" class="progress-container">
+          <div class="progress-bar-wrapper">
+            <div class="progress-bar" :style="{ width: loadingState.percentage + '%' }"></div>
+          </div>
+          <div class="progress-text">
+            {{ loadingState.progress }} / {{ loadingState.total }} ({{ loadingState.percentage }}%)
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Toolbar -->
     <div class="grid-toolbar">
       <!-- Auto Row Height toggle -->
@@ -157,7 +175,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, onBeforeMount, onBeforeUnmount, provide, nextTick } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
-import { useDataGridStore, type GridColumn } from '@/stores/dataGridStore'
+import { useDataGridStore, type GridColumn, type GridRow, type GridCell } from '@/stores/dataGridStore'
 import { useValidation } from '@/composables/useValidation'
 import { useCopyPaste } from '@/composables/useCopyPaste'
 import { useImportExport, ImportMode } from '@/composables/useImportExport'
@@ -392,24 +410,33 @@ const isBackendConnected = ref(false)
 const isLoadingFromBackend = ref(false)
 const isSavingToBackend = ref(false)
 
+// ✅ RIEŠENIE #4: Detailed loading state with progress
+const loadingState = ref({
+  isLoading: false,
+  operation: '',
+  progress: 0,
+  total: 0,
+  percentage: 0
+})
+
 // DynamicScroller ref for force updates
 const scrollerRef = ref<InstanceType<typeof DynamicScroller>>()
 
 // Get selected rows for copy/paste operations
 const getSelectedRows = () => {
-  const selectedCells = Array.from(store.selectedCells)
+  const selectedCells = Array.from(store.selectedCells) as string[]
   if (selectedCells.length === 0) return []
 
   // Get unique row IDs from selected cells
-  const rowIds = new Set(selectedCells.map(cellId => cellId.split(':')[0]))
-  return store.rows.filter(row => rowIds.has(row.rowId))
+  const rowIds = new Set(selectedCells.map((cellId) => cellId.split(':')[0]))
+  return store.rows.filter((row: GridRow) => rowIds.has(row.rowId))
 }
 
 // Get column names (excluding special columns)
 const getDataColumnNames = () => {
   return dataColumns.value
-    .filter(col => !col.specialType)
-    .map(col => col.name)
+    .filter((col: GridColumn) => !col.specialType)
+    .map((col: GridColumn) => col.name)
 }
 
 // Copy handler
@@ -441,21 +468,21 @@ const handlePaste = async () => {
 
     if (selectedCells.length > 0) {
       // Get first selected cell position
-      const firstCellId = selectedCells[0]
+      const firstCellId = selectedCells[0] as string
       const rowId = firstCellId.split(':')[0]
-      const rowIndex = store.rows.findIndex(r => r.rowId === rowId)
+      const rowIndex = store.rows.findIndex((r: GridRow) => r.rowId === rowId)
       if (rowIndex >= 0) {
         targetRowIndex = rowIndex
       }
     }
 
     // Add pasted rows to the store
-    result.rows.forEach((rowData, index) => {
+    result.rows.forEach((rowData: any, index: number) => {
       if (targetRowIndex + index < store.rows.length) {
         // Overwrite existing row
         const targetRow = store.rows[targetRowIndex + index]
-        Object.keys(rowData).forEach(key => {
-          if (dataColumns.value.some(col => col.name === key)) {
+        Object.keys(rowData).forEach((key: string) => {
+          if (dataColumns.value.some((col: GridColumn) => col.name === key)) {
             store.updateCell(targetRow.rowId, key, rowData[key])
           }
         })
@@ -466,8 +493,8 @@ const handlePaste = async () => {
           store.insertRow(lastRowId)
           // Get the newly created row and update its cells with data
           const newRow = store.rows[store.rows.length - 1]
-          Object.keys(rowData).forEach(key => {
-            if (dataColumns.value.some(col => col.name === key)) {
+          Object.keys(rowData).forEach((key: string) => {
+            if (dataColumns.value.some((col: GridColumn) => col.name === key)) {
               store.updateCell(newRow.rowId, key, rowData[key])
             }
           })
@@ -486,10 +513,10 @@ const handleCut = async () => {
   await handleCopy()
 
   // Delete selected cells content
-  const selectedCells = Array.from(store.selectedCells)
-  selectedCells.forEach(cellId => {
+  const selectedCells = Array.from(store.selectedCells) as string[]
+  selectedCells.forEach((cellId) => {
     const [rowId, columnName] = cellId.split(':')
-    if (!dataColumns.value.find(col => col.name === columnName)?.isReadOnly) {
+    if (!dataColumns.value.find((col: GridColumn) => col.name === columnName)?.isReadOnly) {
       store.updateCell(rowId, columnName, null)
     }
   })
@@ -497,10 +524,10 @@ const handleCut = async () => {
 
 // Delete handler
 const handleDelete = () => {
-  const selectedCells = Array.from(store.selectedCells)
-  selectedCells.forEach(cellId => {
+  const selectedCells = Array.from(store.selectedCells) as string[]
+  selectedCells.forEach((cellId) => {
     const [rowId, columnName] = cellId.split(':')
-    if (!dataColumns.value.find(col => col.name === columnName)?.isReadOnly) {
+    if (!dataColumns.value.find((col: GridColumn) => col.name === columnName)?.isReadOnly) {
       store.updateCell(rowId, columnName, null)
     }
   })
@@ -509,8 +536,8 @@ const handleDelete = () => {
 // Select All handler
 const handleSelectAll = () => {
   // Select all cells in all rows
-  store.rows.forEach(row => {
-    dataColumns.value.forEach(col => {
+  store.rows.forEach((row: GridRow) => {
+    dataColumns.value.forEach((col: GridColumn) => {
       if (!col.specialType) { // Only select data columns
         store.selectCell(row.rowId, col.name, true) // true for Ctrl to add to selection
       }
@@ -539,7 +566,7 @@ const dataColumns = computed(() => {
     : store.columns
 
   // Apply defaults to DATA columns (not special columns)
-  return cols.map(col => {
+  return cols.map((col: GridColumn) => {
     // Skip special columns - they have their own defaults
     if (col.specialType) {
       return col
@@ -551,7 +578,8 @@ const dataColumns = computed(() => {
       minWidth: col.minWidth ?? 50,           // Default: 50
       maxWidth: col.maxWidth ?? 200,          // Default: 200
       isSortable: col.isSortable ?? false,    // Default: false
-      isFilterable: col.isFilterable ?? false // Default: false
+      isFilterable: col.isFilterable ?? false, // Default: false
+      visibleForGrid: col.visibleForGrid ?? true  // ✅ RIEŠENIE #6: EXPLICIT DEFAULT
     }
   })
 })
@@ -618,10 +646,10 @@ async function handlePasteSelectedCells() {
 
     if (store.selectedCells.size > 0) {
       // Get first selected cell as paste target
-      const firstCellKey = Array.from(store.selectedCells)[0]
+      const firstCellKey = Array.from(store.selectedCells)[0] as string
       const [firstRowId, firstColName] = firstCellKey.split(':')
-      const firstRow = store.rows.find(r => r.rowId === firstRowId)
-      const firstColIdx = allColumns.value.findIndex(c => c.name === firstColName)
+      const firstRow = store.rows.find((r: GridRow) => r.rowId === firstRowId)
+      const firstColIdx = allColumns.value.findIndex((c: GridColumn) => c.name === firstColName)
 
       if (firstRow && firstColIdx !== -1) {
         targetRowIndex = firstRow.rowIndex
@@ -635,7 +663,7 @@ async function handlePasteSelectedCells() {
     })
 
     // Paste data row by row, column by column
-    result.rows.forEach((rowData, rowOffset) => {
+    result.rows.forEach((rowData: any, rowOffset: number) => {
       const pasteRowIndex = targetRowIndex + rowOffset
 
       if (pasteRowIndex >= store.rows.length) {
@@ -646,7 +674,7 @@ async function handlePasteSelectedCells() {
       const targetRow = store.rows[pasteRowIndex]
 
       // Paste each column value
-      Object.keys(rowData).forEach((columnKey, colOffset) => {
+      Object.keys(rowData).forEach((columnKey: string, colOffset: number) => {
         const pasteColIndex = targetColIndex + colOffset
 
         if (pasteColIndex >= allColumns.value.length) {
@@ -683,8 +711,22 @@ onBeforeMount(() => {
 // ✅ RIEŠENIE C: Second onMounted REMOVED - merged into single async onMounted above
 
 // Lifecycle: Before unmount
+// ✅ RIEŠENIE #3: Cleanup on unmount to prevent memory leaks
 onBeforeUnmount(() => {
-  logger.info('🔄 Component before unmount')
+  logger.info('🔄 Component before unmount - starting cleanup')
+
+  // Clear validation state
+  if (validation) {
+    console.log('[DataGrid] Clearing validation state...')
+    validation.clearValidationErrors()
+    validation.validationRules.value.clear()
+  }
+
+  // Clear store data
+  console.log('[DataGrid] Clearing store data...')
+  store.clearAllData()
+
+  logger.info('✅ Component cleanup complete')
 })
 
 // Lifecycle: Unmounted - cleanup event listeners
@@ -719,7 +761,7 @@ async function validateAllCellsInBatches() {
     // Wait for previous validation to finish (max 5 seconds)
     const startWait = Date.now()
     while (isValidating.value && Date.now() - startWait < 5000) {
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await new Promise((resolve: (value: void | PromiseLike<void>) => void) => setTimeout(resolve, 100))
     }
 
     if (isValidating.value) {
@@ -741,18 +783,49 @@ async function validateAllCellsInBatches() {
       totalColumns: store.columns.length
     })
 
+    // 📊 LOG: Validation START
+    console.info('═══════════════════════════════════════════════════')
+    console.info('🔍 VALIDATION START')
+    console.info(`   Rows: ${store.rows.length}, Columns: ${store.columns.length}`)
+    console.info('═══════════════════════════════════════════════════')
+
     if (!store.config.enableValidation || !validation) {
       console.log('[validateAllCellsInBatches] ⚠️ SKIPPED - validation not enabled or not available')
       return
     }
 
+    // ✅ RIEŠENIE #3: Extract columns with validation rules
+    const columnsWithRules = new Set<string>()
+
+    for (const [columnName, rules] of validation.validationRules.value.entries()) {
+      if (rules.length > 0) {
+        columnsWithRules.add(columnName)
+      }
+    }
+
+    console.log('[validateAllCellsInBatches] 🔍 Columns with rules:', {
+      totalColumns: store.columns.length,
+      columnsWithRules: columnsWithRules.size,
+      columns: Array.from(columnsWithRules)
+    })
+
+    // ✅ RIEŠENIE #1: EARLY EXIT if no validation rules at all
+    if (columnsWithRules.size === 0) {
+      console.log('[validateAllCellsInBatches] ⚠️ NO VALIDATION RULES - skipping validation entirely')
+      console.log('[validateAllCellsInBatches] ✅ SKIPPED - 0 cells validated (no rules defined)')
+      return  // ← EXIT - žiadna validácia!
+    }
+
+    // ✅ RIEŠENIE #3: Pass columnsWithRules to filter out columns without rules
+    // ✅ FIX C: Only pass columnsWithRules if it has items (avoid empty Set issue)
+    // ✅ Now safe to pass columnsWithRules (guaranteed non-empty by check above)
     // Solution B: Get only cells that need validation (changed or unvalidated)
     // Pass forceValidateAll=true to validate ALL cells, including those in currently empty rows
-    const cellsToValidate = store.getCellsNeedingValidation(true)
+    const cellsToValidate = store.getCellsNeedingValidation(true, columnsWithRules)
 
     console.log('[validateAllCellsInBatches] 📋 Cells needing validation:', {
       count: cellsToValidate.length,
-      sample: cellsToValidate.slice(0, 5).map(c => `${c.rowId}:${c.columnName}`)
+      sample: cellsToValidate.slice(0, 5).map((c: { rowId: string; columnName: string }) => `${c.rowId}:${c.columnName}`)
     })
 
     if (cellsToValidate.length === 0) {
@@ -796,7 +869,7 @@ async function validateAllCellsInBatches() {
       })
 
       // ✅ Create array of validation promises - ALL cells validate in parallel
-      const validationPromises = batch.map(({ rowId, columnName }) => {
+      const validationPromises = batch.map(({ rowId, columnName }: { rowId: string; columnName: string }) => {
         // ✅ RIEŠENIE #3: Use O(1) Map.get() instead of O(n) array.find()
         const row = store.getRow(rowId)
         if (!row) {
@@ -804,13 +877,13 @@ async function validateAllCellsInBatches() {
           return Promise.resolve()
         }
 
-        const cell = row.cells.find(c => c.columnName === columnName)
+        const cell = row.cells.find((c: GridCell) => c.columnName === columnName)
         if (!cell) {
           console.warn('[validateAllCellsInBatches] ⚠️ Cell not found:', { rowId, columnName })
           return Promise.resolve()
         }
 
-        const rowCells = row.cells.map(c => ({ columnName: c.columnName, value: c.value }))
+        const rowCells = row.cells.map((c: GridCell) => ({ columnName: c.columnName, value: c.value }))
 
         // ✅ RIEŠENIE #2: Use validateCellDirect with skipErrorCountUpdate=true for bulk validation
         return validation.validateCellDirect(rowId, columnName, cell.value, rowCells, true)
@@ -818,7 +891,7 @@ async function validateAllCellsInBatches() {
             store.markCellValidated(rowId, columnName)
             validatedCount++
           })
-          .catch(err => {
+          .catch((err: any) => {
             console.error('[validateAllCellsInBatches] ❌ Validation error:', { rowId, columnName, err })
           })
       })
@@ -848,8 +921,17 @@ async function validateAllCellsInBatches() {
       totalRequested: cellsToValidate.length,
       success: validatedCount === cellsToValidate.length
     })
+
+    // 📊 LOG: Validation SUCCESS
+    console.info('═══════════════════════════════════════════════════')
+    console.info(`✅ VALIDATION SUCCESS - ${validatedCount} cells validated`)
+    console.info(`   Total errors: ${validation.validationErrors.value.length}`)
+    console.info('═══════════════════════════════════════════════════')
   } catch (error) {
-    console.error('[validateAllCellsInBatches] ❌ ERROR:', error)
+    // 📊 LOG: Validation ERROR
+    console.error('═══════════════════════════════════════════════════')
+    console.error('❌ VALIDATION ERROR:', error)
+    console.error('═══════════════════════════════════════════════════')
     throw error
   } finally {
     // ✅ RIEŠENIE #1: Always reset flag, even if error occurs
@@ -990,7 +1072,7 @@ const actionColumns = computed(() => {
 // 4. Insert, Delete (actionColumns)
 const allColumns = computed(() => [
   ...specialColumns.value,
-  ...dataColumns.value.filter(col => !col.specialType && col.isVisible && col.visibleForGrid !== false), // Only visible non-special columns that are shown in grid
+  ...dataColumns.value.filter((col: GridColumn) => !col.specialType && col.isVisible && col.visibleForGrid !== false), // Only visible non-special columns that are shown in grid
   ...validationColumn.value,
   ...actionColumns.value
 ])
@@ -998,7 +1080,7 @@ const allColumns = computed(() => [
 // Generate CSS Grid template columns
 // Example: "50px 150px 200px 1fr 50px" for fixed and auto-width columns
 const gridTemplateColumns = computed(() => {
-  const template = allColumns.value.map(col => {
+  const template = allColumns.value.map((col: GridColumn) => {
     if (col.autoWidth) {
       return '1fr'  // Auto-width columns use fractional unit
     }
@@ -1006,7 +1088,7 @@ const gridTemplateColumns = computed(() => {
   }).join(' ')
 
   // Debug: Log grid template and columns
-  console.log('[GridTemplate] All Columns:', allColumns.value.map(c => ({
+  console.log('[GridTemplate] All Columns:', allColumns.value.map((c: GridColumn) => ({
     name: c.name,
     header: c.header,
     width: c.width,
@@ -1116,7 +1198,7 @@ watch(() => validation?.errorCount?.value ?? 0, async (errorCount, oldErrorCount
   // FIXED: ALWAYS update validationErrorCount, even when errorCount = 0
   // This ensures stale values are cleared when errors are resolved
   console.log('[WATCHER] Updating validationErrorCount for all rows...')
-  store.rows.forEach(row => {
+  store.rows.forEach((row: GridRow) => {
     // If no errors object or no errors for this row, set to 0
     const count = (newErrors && newErrors[row.rowId]) ? newErrors[row.rowId].length : 0
     row.validationErrorCount = count
@@ -1149,7 +1231,7 @@ watch(() => validation?.errorCount?.value ?? 0, async (errorCount, oldErrorCount
 
 function handleSort(columnName: string, direction: 'asc' | 'desc') {
   // Check if column exists and is sortable
-  const column = store.columns.find(c => c.name === columnName)
+  const column = store.columns.find((c: GridColumn) => c.name === columnName)
   if (!column) {
     console.error(`[handleSort] Column not found: ${columnName}`)
     return
@@ -1170,7 +1252,7 @@ function handleSort(columnName: string, direction: 'asc' | 'desc') {
 }
 
 function handleResize(columnName: string, newWidth: number) {
-  const col = store.columns.find(c => c.name === columnName)
+  const col = store.columns.find((c: GridColumn) => c.name === columnName)
   if (col) {
     col.width = newWidth
   }
@@ -1181,13 +1263,35 @@ async function handleCellEditComplete(rowId: string, columnName: string, value: 
 
   store.updateCell(rowId, columnName, value)
 
+  // ✅ RIEŠENIE #4: Early exit checks for validation
+  const column = store.columns.find((c: GridColumn) => c.name === columnName)
+  if (!column) {
+    console.warn('[DataGrid] handleCellEditComplete: Column not found:', columnName)
+    return
+  }
+
+  // ✅ RIEŠENIE #4: Skip validation for hidden columns
+  if (column.visibleForGrid === false) {
+    console.log('[DataGrid] handleCellEditComplete: Skipping validation - hidden column:', columnName)
+    // Continue to row height recalculation (don't return yet)
+  }
   // CRITICAL: Validate cell immediately after edit if auto-validate is enabled
-  if (store.config.autoValidate && store.config.enableValidation && validation) {
-    const row = store.rows.find(r => r.rowId === rowId)
-    const rowCells = row?.cells.map(c => ({ columnName: c.columnName, value: c.value }))
-    await validation.validateCellThrottled(rowId, columnName, value, rowCells)
-    const hasErrors = validation.validationErrors[rowId] && validation.validationErrors[rowId].length > 0
-    console.log('[DataGrid] Cell validated after edit:', { rowId, columnName, hasErrors })
+  else if (store.config.autoValidate && store.config.enableValidation && validation) {
+    // ✅ RIEŠENIE #4: Skip validation if column has no rules
+    const hasRules = validation.validationRules.value.has(columnName) &&
+                     validation.validationRules.value.get(columnName)!.length > 0
+
+    if (!hasRules) {
+      console.log('[DataGrid] handleCellEditComplete: Skipping validation - no rules:', columnName)
+      // Continue to row height recalculation (don't return yet)
+    } else {
+      // ✅ NOW validate (only if visible AND has rules)
+      const row = store.rows.find((r: GridRow) => r.rowId === rowId)
+      const rowCells = row?.cells.map((c: GridCell) => ({ columnName: c.columnName, value: c.value }))
+      await validation.validateCellThrottled(rowId, columnName, value, rowCells)
+      const hasErrors = validation.validationErrors[rowId] && validation.validationErrors[rowId].length > 0
+      console.log('[DataGrid] Cell validated after edit:', { rowId, columnName, hasErrors })
+    }
   }
 
   // Recalculate row height if auto row height is enabled
@@ -1246,11 +1350,11 @@ function handleInsertBelow(rowId: string, count: number) {
 
 // Hidden columns management
 const hiddenColumns = computed(() => {
-  return dataColumns.value.filter(col => !col.isVisible && !col.specialType && col.visibleForGrid !== false)
+  return dataColumns.value.filter((col: GridColumn) => !col.isVisible && !col.specialType && col.visibleForGrid !== false)
 })
 
 function handleHideColumn(columnName: string) {
-  const col = dataColumns.value.find(c => c.name === columnName)
+  const col = dataColumns.value.find((c: GridColumn) => c.name === columnName)
   if (col && !col.specialType) {
     col.isVisible = false
     console.log(`Hidden column: ${columnName}`)
@@ -1258,7 +1362,7 @@ function handleHideColumn(columnName: string) {
 }
 
 function showColumn(columnName: string) {
-  const col = dataColumns.value.find(c => c.name === columnName)
+  const col = dataColumns.value.find((c: GridColumn) => c.name === columnName)
   if (col) {
     col.isVisible = true
     console.log(`Shown column: ${columnName}`)
@@ -1266,7 +1370,7 @@ function showColumn(columnName: string) {
 }
 
 function showAllColumns() {
-  dataColumns.value.forEach(col => {
+  dataColumns.value.forEach((col: GridColumn) => {
     if (!col.specialType) {
       col.isVisible = true
     }
@@ -1275,7 +1379,7 @@ function showAllColumns() {
 }
 
 function handleAutoFitColumn(columnName: string) {
-  const col = dataColumns.value.find(c => c.name === columnName)
+  const col = dataColumns.value.find((c: GridColumn) => c.name === columnName)
   if (!col) return
 
   // Create a temporary canvas to measure text width
@@ -1293,8 +1397,8 @@ function handleAutoFitColumn(columnName: string) {
   maxWidth = Math.max(maxWidth, headerWidth + 40) // Add padding for sort icon, etc.
 
   // Measure all cell values in this column
-  store.rows.forEach(row => {
-    const cell = row.cells.find(c => c.columnName === columnName)
+  store.rows.forEach((row: GridRow) => {
+    const cell = row.cells.find((c: GridCell) => c.columnName === columnName)
     const value = cell?.value
     const textValue = value?.toString() ?? ''
     if (textValue) {
@@ -1426,11 +1530,11 @@ function getUniqueValues(columnName: string): FilterValue[] {
       // ✅ DEBUG: Log first few rows to see checkbox values
       const sampleSize = Math.min(3, filteredRows.length)
       for (let i = 0; i < sampleSize; i++) {
-        const cell = filteredRows[i].cells.find(c => c.columnName === '__checkbox')
+        const cell = filteredRows[i].cells.find((c: GridCell) => c.columnName === '__checkbox')
         console.log(`[getUniqueValues] Checkbox - Row ${i}: cell=${!!cell}, value=${cell?.value}, type=${typeof cell?.value}`)
       }
 
-      const trueCount = filteredRows.filter(row => {
+      const trueCount = filteredRows.filter((row: GridRow) => {
         // ✅ FIX: Checkbox state je v store.checkedRows, NIE v row.cells
         return store.isRowChecked(row.rowId)
       }).length
@@ -1474,8 +1578,8 @@ function getUniqueValues(columnName: string): FilterValue[] {
     console.log(`[getUniqueValues] Column=${columnName}, AllRows=${allRows.length}, FilteredRows=${filteredRows.length}`)
 
     // Extract unique values from filtered rows
-    filteredRows.forEach(row => {
-      const cell = row.cells.find(c => c.columnName === columnName)
+    filteredRows.forEach((row: GridRow) => {
+      const cell = row.cells.find((c: GridCell) => c.columnName === columnName)
       const value = cell?.value?.toString() ?? ''
       valueMap.set(value, (valueMap.get(value) || 0) + 1)
     })
@@ -1486,7 +1590,7 @@ function getUniqueValues(columnName: string): FilterValue[] {
     console.log(`[getUniqueValues] Column=${columnName}, UniqueValues=${valueMap.size}, SelectedValues=${currentlySelectedValues.size}`)
 
     const result = Array.from(valueMap.entries())
-      .map(([value, count]) => {
+      .map(([value, count]: [string, number]) => {
         // Display empty values as "(Empty)"
         const displayValue = value === '' ? '(Empty)' : value
         return {
@@ -1496,7 +1600,7 @@ function getUniqueValues(columnName: string): FilterValue[] {
           displayText: `${displayValue} (${count})`
         }
       })
-      .sort((a, b) => {
+      .sort((a: FilterValue, b: FilterValue) => {
         // Sort empty values to bottom
         if (a.value === '' && b.value !== '') return 1
         if (a.value !== '' && b.value === '') return -1
@@ -1533,7 +1637,7 @@ function handleShowFilter(columnName: string) {
     }
 
     // ✅ Check if column exists and is filterable
-    const column = dataColumns.value.find(c => c.name === columnName)
+    const column = dataColumns.value.find((c: GridColumn) => c.name === columnName)
     if (!column) {
       console.error(`[handleShowFilter] Column not found: ${columnName}`)
       return
@@ -1634,7 +1738,7 @@ function extractColumnFilters(filter: FilterExpression | null): Map<string, Filt
 // Helper: Combine multiple filters with AND operator
 function combineFiltersWithAnd(filters: FilterExpression[]): FilterExpression | null {
   // ✅ FIX: Filter out null/undefined values to prevent corrupted filter structures
-  const validFilters = filters.filter(f => f != null)
+  const validFilters = filters.filter((f: FilterExpression | null) => f != null)
 
   if (validFilters.length === 0) return null
   if (validFilters.length === 1) return validFilters[0]
@@ -1686,7 +1790,7 @@ function handleApplyCheckboxFilter(selectedValues: string[]) {
   } else {
     // ✅ FIX: Convert string values to boolean for Checkbox column
     const filterValues = columnName === '__checkbox'
-      ? selectedValues.map(v => v === 'true')
+      ? selectedValues.map((v: string) => v === 'true')
       : selectedValues
 
     // Build new filter for this column
@@ -1790,7 +1894,7 @@ async function toggleAutoRowHeight() {
   try {
     console.log('[toggleAutoRowHeight] ========== FUNCTION CALLED ==========')
     console.log(`[toggleAutoRowHeight] Current state: ${store.isAutoRowHeightEnabled}`)
-    console.log('[toggleAutoRowHeight] Rows BEFORE:', store.rows.slice(0, 5).map(r => ({ id: r.rowId, height: r.height })))
+    console.log('[toggleAutoRowHeight] Rows BEFORE:', store.rows.slice(0, 5).map((r: GridRow) => ({ id: r.rowId, height: r.height })))
 
     const newValue = !store.isAutoRowHeightEnabled
     console.log(`[toggleAutoRowHeight] New state will be: ${newValue}`)
@@ -1810,7 +1914,7 @@ async function toggleAutoRowHeight() {
       console.log('[toggleAutoRowHeight] Heights reset successfully')
     }
 
-    console.log('[toggleAutoRowHeight] Rows AFTER:', store.rows.slice(0, 5).map(r => ({ id: r.rowId, height: r.height })))
+    console.log('[toggleAutoRowHeight] Rows AFTER:', store.rows.slice(0, 5).map((r: GridRow) => ({ id: r.rowId, height: r.height })))
     console.log('[toggleAutoRowHeight] ========== FUNCTION COMPLETED ==========')
   } catch (error) {
     console.log(`[toggleAutoRowHeight] ❌ ERROR: ${error}`)
@@ -1822,8 +1926,8 @@ async function applyAutoRowHeightToAll() {
   // Pass ALL columns but skip ValidationAlerts to avoid inflated heights
   // ValidationAlerts uses ellipsis, doesn't need measurement
   const columnsForMeasurement = allColumns.value
-    .filter(col => !col.specialType || col.specialType !== 'ValidationAlerts')
-    .map(col => ({
+    .filter((col: GridColumn) => !col.specialType || col.specialType !== 'ValidationAlerts')
+    .map((col: GridColumn) => ({
       name: col.name,
       width: col.width,
       specialType: col.specialType
@@ -1833,15 +1937,15 @@ async function applyAutoRowHeightToAll() {
   console.log('[applyAutoRowHeightToAll] AutoRowHeight is ON')
 
   // Log ALL row heights BEFORE changes
-  const heightsBefore = store.rows.map(r => ({ rowId: r.rowId, heightBefore: r.height }))
+  const heightsBefore = store.rows.map((r: GridRow) => ({ rowId: r.rowId, heightBefore: r.height }))
   console.log('[applyAutoRowHeightToAll] BEFORE - All row heights:', heightsBefore.slice(0, 10))
 
-  console.log('[applyAutoRowHeightToAll] Measuring columns:', columnsForMeasurement.map(c => `${c.name} (${c.width}px, special: ${c.specialType || 'none'})`).join(', '))
+  console.log('[applyAutoRowHeightToAll] Measuring columns:', columnsForMeasurement.map((c: { name: string; width: number; specialType?: string }) => `${c.name} (${c.width}px, special: ${c.specialType || 'none'})`).join(', '))
 
   const result = await autoRowHeight.applyAutoRowHeight(store.rows, columnsForMeasurement)
 
   // Log ALL row heights AFTER changes and compare
-  const heightsAfter = store.rows.map((r, i) => ({
+  const heightsAfter = store.rows.map((r: GridRow, i: number) => ({
     rowId: r.rowId,
     heightBefore: heightsBefore[i].heightBefore,
     heightAfter: r.height,
@@ -1849,7 +1953,7 @@ async function applyAutoRowHeightToAll() {
   }))
 
   console.log('[applyAutoRowHeightToAll] AFTER - All row heights (first 10):', heightsAfter.slice(0, 10))
-  console.log('[applyAutoRowHeightToAll] Changed rows:', heightsAfter.filter(h => h.changed).length)
+  console.log('[applyAutoRowHeightToAll] Changed rows:', heightsAfter.filter((h: { rowId: string; heightBefore: number; heightAfter: number; changed: boolean }) => h.changed).length)
   console.log(`[applyAutoRowHeightToAll] Summary: ${result.totalRowsUpdated} rows updated, average height: ${result.averageHeight.toFixed(1)}px`)
 
   // CRITICAL: Wait for Vue to update DOM before forcing scroller update
@@ -1865,7 +1969,7 @@ async function applyAutoRowHeightToAll() {
   console.log('[applyAutoRowHeightToAll] Third nextTick complete')
 
   // Small delay to ensure DynamicScroller has processed all changes
-  await new Promise(resolve => setTimeout(resolve, 50))
+  await new Promise((resolve: (value: void | PromiseLike<void>) => void) => setTimeout(resolve, 50))
   console.log('[applyAutoRowHeightToAll] Delay complete, calling forceUpdate...')
 
   // Then force DynamicScroller to recalculate sizes
@@ -1887,7 +1991,7 @@ async function resetAllRowHeights() {
   let rowsProcessed = 0
   const defaultHeight = 32
 
-  store.rows.forEach((row) => {
+  store.rows.forEach((row: GridRow) => {
     row.height = defaultHeight
     rowsProcessed++
   })
@@ -1912,7 +2016,7 @@ async function resetAllRowHeights() {
   console.log('[resetAllRowHeights] Third nextTick complete')
 
   // Small delay to ensure DynamicScroller has processed all changes
-  await new Promise(resolve => setTimeout(resolve, 50))
+  await new Promise((resolve: (value: void | PromiseLike<void>) => void) => setTimeout(resolve, 50))
   console.log('[resetAllRowHeights] Delay complete, calling forceUpdate...')
 
   // Then force DynamicScroller to recalculate sizes
@@ -1931,14 +2035,14 @@ async function recalculateRowHeightAfterEdit(rowId: string) {
 
   // Skip ValidationAlerts column from measurement - validation messages use ellipsis
   const columnsForMeasurement = allColumns.value
-    .filter(col => !col.specialType || col.specialType !== 'ValidationAlerts')
-    .map(col => ({
+    .filter((col: GridColumn) => !col.specialType || col.specialType !== 'ValidationAlerts')
+    .map((col: GridColumn) => ({
       name: col.name,
       width: col.width,
       specialType: col.specialType
     }))
 
-  const row = store.rows.find(r => r.rowId === rowId)
+  const row = store.rows.find((r: GridRow) => r.rowId === rowId)
   if (!row) return
 
   const updatedCount = autoRowHeight.recalculateRows(store.rows, [rowId], columnsForMeasurement)
@@ -1956,7 +2060,7 @@ async function recalculateRowHeightAfterEdit(rowId: string) {
  * Only counts explicit newlines (\n), doesn't wrap by spaces
  */
 async function recalculateRowHeightForNewlines(rowId: string) {
-  const row = store.rows.find(r => r.rowId === rowId)
+  const row = store.rows.find((r: GridRow) => r.rowId === rowId)
   if (!row) return
 
   let maxLines = 1
@@ -2017,6 +2121,20 @@ async function loadDataFromBackendOriginal() {
   isLoadingFromBackend.value = true
   isProcessing.value = true
 
+  // ✅ RIEŠENIE #4: Set loading state
+  loadingState.value = {
+    isLoading: true,
+    operation: 'Loading data from backend...',
+    progress: 0,
+    total: 0,
+    percentage: 0
+  }
+
+  // 📊 LOG: Data loading START
+  console.info('═══════════════════════════════════════════════════')
+  console.info('📥 DATA LOADING START')
+  console.info('═══════════════════════════════════════════════════')
+
   try {
     console.log('[loadDataFromBackend] Calling gridApi.getData()...')
     const response = await gridApi.getData()
@@ -2027,17 +2145,25 @@ async function loadDataFromBackendOriginal() {
     })
 
     if (response.success && response.data) {
+      // ✅ RIEŠENIE #4: Update loading state
+      loadingState.value.operation = 'Processing data...'
+      loadingState.value.total = response.data.length
+
       console.log('[loadDataFromBackend] Converting data format...')
       // Convert backend data format to store format
       // Backend returns: { RowId, RowHeight, Checkbox, Data: { name, email, ... } }
       // Store expects: { __rowId, __rowHeight, __checkbox, name, email, ... }
-      const rows = response.data.map((row, index) => ({
+      const rows = response.data.map((row: any, index: number) => ({
         __rowId: row.RowId || `row-${Date.now()}-${index}`,
         __rowHeight: row.RowHeight || 40,
         __checkbox: row.Checkbox,
         ...row.Data  // Spread Data dictionary to root level
       }))
       console.log('[loadDataFromBackend] Converted rows:', rows.length)
+
+      // ✅ RIEŠENIE #4: Update progress
+      loadingState.value.progress = rows.length
+      loadingState.value.percentage = 100
 
       // Clear validation tracking before loading new data (bulk load)
       console.log('[loadDataFromBackend] Calling clearValidationTracking()...')
@@ -2046,6 +2172,14 @@ async function loadDataFromBackendOriginal() {
       console.log('[loadDataFromBackend] Calling store.loadRows()...')
       store.loadRows(rows)
       console.log(`[loadDataFromBackend] ✅ Loaded ${rows.length} rows from backend`)
+
+      // ✅ RIEŠENIE #4: Update operation
+      loadingState.value.operation = 'Data loaded successfully'
+
+      // 📊 LOG: Data loading SUCCESS
+      console.info('═══════════════════════════════════════════════════')
+      console.info(`✅ DATA LOADING SUCCESS - ${rows.length} rows loaded`)
+      console.info('═══════════════════════════════════════════════════')
 
       // ✅ RIEŠENIE #4B: Explicit validation call after data load (replaces deep watch on rows)
       // Validate all cells after loading data if auto-validation is enabled
@@ -2067,7 +2201,7 @@ async function loadDataFromBackendOriginal() {
           console.log('[loadDataFromBackend] Second nextTick done - scroller ready')
 
           // ✅ RIEŠENIE #4B: Additional small delay for stability
-          await new Promise(resolve => setTimeout(resolve, 50))
+          await new Promise((resolve: (value: void | PromiseLike<void>) => void) => setTimeout(resolve, 50))
           console.log('[loadDataFromBackend] Delay done - starting validation')
 
           await validateAllCellsInBatches()
@@ -2079,15 +2213,25 @@ async function loadDataFromBackendOriginal() {
         console.log('[loadDataFromBackend] ⚠️ Auto-validation disabled in config')
       }
     } else {
-      console.error('[loadDataFromBackend] ❌ Failed to load data:', response.error)
+      // 📊 LOG: Data loading ERROR (API failed)
+      console.error('═══════════════════════════════════════════════════')
+      console.error('❌ DATA LOADING ERROR:', response.error)
+      console.error('═══════════════════════════════════════════════════')
       alert(`Failed to load data: ${response.error}`)
     }
   } catch (error) {
-    console.error('[loadDataFromBackend] ❌ EXCEPTION:', error)
+    // 📊 LOG: Data loading FATAL (Exception)
+    console.error('═══════════════════════════════════════════════════')
+    console.error('💥 DATA LOADING FATAL EXCEPTION:', error)
+    console.error('═══════════════════════════════════════════════════')
     alert(`Error loading data: ${error instanceof Error ? error.message : 'Unknown error'}`)
   } finally {
     isLoadingFromBackend.value = false
     isProcessing.value = false
+
+    // ✅ RIEŠENIE #4: Reset loading state
+    loadingState.value.isLoading = false
+
     console.log('[loadDataFromBackend] 🔵 END')
   }
 }
@@ -2101,28 +2245,57 @@ async function saveDataToBackend() {
   isSavingToBackend.value = true
 
   try {
-    // Extract data columns only
-    const data = store.rows.map(row => {
+    // ✅ RIEŠENIE #5: Get visible data columns (for empty check)
+    const visibleDataColumns = dataColumns.value.filter((col: GridColumn) =>
+      !col.specialType && col.visibleForGrid !== false
+    )
+
+    // ✅ RIEŠENIE #5: Filter and extract data
+    const data: Record<string, any>[] = []
+    let skippedEmptyRows = 0
+
+    for (const row of store.rows) {
+      // ✅ RIEŠENIE #5: Check if row has visible data
+      const hasVisibleData = visibleDataColumns.some((col: GridColumn) => {
+        const cell = row.cells.find((c: GridCell) => c.columnName === col.name)
+        const value = cell?.value
+        return value !== null && value !== undefined && value !== ''
+      })
+
+      if (!hasVisibleData) {
+        skippedEmptyRows++
+        continue  // ✅ SKIP - row has no visible data
+      }
+
+      // ✅ RIEŠENIE #5: Extract ALL columns (including hidden)
+      // Backend gets complete data for rows with visible content
       const rowData: Record<string, any> = {}
 
-      dataColumns.value.forEach(col => {
+      dataColumns.value.forEach((col: GridColumn) => {
         if (!col.specialType) {
-          const cell = row.cells.find(c => c.columnName === col.name)
+          const cell = row.cells.find((c: GridCell) => c.columnName === col.name)
           if (cell) {
             rowData[col.name] = cell.value
           }
         }
       })
 
-      return rowData
+      data.push(rowData)
+    }
+
+    console.log('[saveDataToBackend] 📦 Data prepared:', {
+      totalRows: store.rows.length,
+      savedRows: data.length,
+      skippedEmptyRows,
+      filterRate: `${Math.round((skippedEmptyRows / store.rows.length) * 100)}%`
     })
 
     const response = await gridApi.importData(data)
 
     if (response.success) {
-      console.log(`Saved ${data.length} rows to backend`)
+      console.log(`✅ Saved ${data.length} rows to backend`)
     } else {
-      console.error('Failed to save data to backend:', response.error)
+      console.error('❌ Failed to save data to backend:', response.error)
       alert(`Failed to save data: ${response.error}`)
     }
   } catch (error) {
@@ -2162,10 +2335,10 @@ async function saveDataToBackend() {
 // }
 
 async function handleImportFromJson(mode: ImportMode = ImportMode.Append) {
-  const currentRows = store.rows.map(row => {
+  const currentRows = store.rows.map((row: GridRow) => {
     const rowData: Record<string, any> = { __rowId: row.rowId, __rowIndex: row.rowIndex }
 
-    row.cells.forEach(cell => {
+    row.cells.forEach((cell: GridCell) => {
       rowData[cell.columnName] = cell.value
     })
 
@@ -2240,10 +2413,10 @@ const enhancedValidation = {
 
     // Validate each cell that needs validation
     for (const { rowId, columnName } of cellsToValidate) {
-      const row = store.rows.find(r => r.rowId === rowId)
+      const row = store.rows.find((r: GridRow) => r.rowId === rowId)
       if (!row) continue
 
-      const cell = row.cells.find(c => c.columnName === columnName)
+      const cell = row.cells.find((c: GridCell) => c.columnName === columnName)
       if (!cell) continue
 
       // Validate the cell using existing validation rules
@@ -2358,6 +2531,48 @@ defineExpose({
 }
 
 .processing-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dg-cell-fg, #212529);
+  white-space: nowrap;
+}
+
+/* ✅ RIEŠENIE #4: Loading overlay styles */
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  background-color: white;
+  padding: 32px 48px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--dg-border-cell, #e0e0e0);
+  border-top-color: var(--dg-header-sort-indicator, #2196f3);
+  border-radius: 50%;
+  animation: spinner-rotate 0.8s linear infinite;
+}
+
+.loading-text {
   font-size: 14px;
   font-weight: 500;
   color: var(--dg-cell-fg, #212529);

@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
-import { pushScopeId, popScopeId, nextTick, withScopeId, createBlock, openBlock, markRaw, shallowReactive, h, resolveComponent, resolveDirective, withDirectives, createElementBlock, normalizeClass, createCommentVNode, createVNode, renderSlot, resolveDynamicComponent, normalizeStyle, withCtx, Fragment, renderList, mergeProps, toHandlers, normalizeProps, guardReactiveProps, hasInjectionContext, inject, toRaw, computed, isRef, isReactive, toRef, effectScope, ref, getCurrentInstance, watch, unref, reactive, getCurrentScope, onScopeDispose, toRefs, onMounted, onUnmounted, defineComponent, withModifiers, createElementVNode, toDisplayString, createTextVNode, vModelText, Teleport, vModelRadio, vModelCheckbox, provide, onBeforeUnmount, onBeforeMount, createStaticVNode, vModelSelect } from "vue";
+import { pushScopeId, popScopeId, nextTick, withScopeId, createBlock, openBlock, markRaw, shallowReactive, h, resolveComponent, resolveDirective, withDirectives, createElementBlock, normalizeClass, createCommentVNode, createVNode, renderSlot, resolveDynamicComponent, normalizeStyle, withCtx, Fragment, renderList, mergeProps, toHandlers, normalizeProps, guardReactiveProps, hasInjectionContext, inject, effectScope, ref, toRaw, getCurrentInstance, watch, unref, reactive, isRef, isReactive, toRef, getCurrentScope, onScopeDispose, toRefs, computed, onMounted, onUnmounted, defineComponent, withModifiers, createElementVNode, toDisplayString, createTextVNode, vModelText, Teleport, vModelRadio, vModelCheckbox, provide, onBeforeUnmount, onBeforeMount, createStaticVNode, vModelSelect } from "vue";
 import { useDebounceFn } from "@vueuse/core";
 import ContextMenu from "@imengyu/vue3-context-menu";
 function getInternetExplorerVersion() {
@@ -2948,28 +2948,6 @@ This will fail in production.`);
   useStore.$id = id;
   return useStore;
 }
-function storeToRefs(store) {
-  {
-    const rawStore = toRaw(store);
-    const refs = {};
-    for (const key in rawStore) {
-      const value = rawStore[key];
-      if (value.effect) {
-        refs[key] = // ...
-        computed({
-          get: () => store[key],
-          set(value2) {
-            store[key] = value2;
-          }
-        });
-      } else if (isRef(value) || isReactive(value)) {
-        refs[key] = // ---
-        toRef(store, key);
-      }
-    }
-    return refs;
-  }
-}
 function useFiltering() {
   const currentFilter = ref(null);
   function evaluateFilter(row, filter, store) {
@@ -3168,12 +3146,17 @@ function useSearch(rows) {
     isSearchMatch
   };
 }
+const storeCache = /* @__PURE__ */ new Map();
 const useDataGridStore = (storeId = "dataGrid") => {
   if (!storeId || typeof storeId !== "string") {
     console.error("[useDataGridStore] Invalid storeId:", storeId);
     throw new Error(`Invalid storeId: ${storeId}`);
   }
-  console.log("[useDataGridStore] Creating store definition for:", storeId);
+  if (storeCache.has(storeId)) {
+    console.log("[useDataGridStore] Using CACHED store definition for:", storeId);
+    return storeCache.get(storeId);
+  }
+  console.log("[useDataGridStore] Creating NEW store definition for:", storeId);
   const storeDefinition = /* @__PURE__ */ defineStore(storeId, () => {
     const rowsMap = ref(/* @__PURE__ */ new Map());
     const rowsOrder = ref([]);
@@ -3280,18 +3263,31 @@ const useDataGridStore = (storeId = "dataGrid") => {
     function loadRows(data) {
       var _a;
       console.log("[dataGridStore] loadRows:", {
-        rowCount: data.length,
+        originalRowCount: data.length,
         columnCount: columns.value.length,
         autoValidate: config2.value.autoValidate
       });
       const newMap = /* @__PURE__ */ new Map();
       const newOrder = [];
+      const visibleColumns = columns.value.filter(
+        (col) => !col.specialType && col.visibleForGrid !== false
+      );
+      let skippedEmptyRows = 0;
       data.forEach((rowData, idx) => {
+        const hasVisibleData = visibleColumns.some((col) => {
+          const value = rowData[col.name];
+          return value !== null && value !== void 0 && value !== "";
+        });
+        if (!hasVisibleData) {
+          skippedEmptyRows++;
+          return;
+        }
         const rowId = rowData.__rowId || generateULID();
         const height = rowData.__rowHeight || 40;
         const row = {
           rowId,
-          rowIndex: idx,
+          rowIndex: newOrder.length,
+          // ✅ Actual index after filtering
           height,
           cells: columns.value.map((col) => ({
             rowId,
@@ -3308,7 +3304,10 @@ const useDataGridStore = (storeId = "dataGrid") => {
       rowsOrder.value = newOrder;
       ensureMinimumRows();
       console.log("[dataGridStore] loadRows complete:", {
+        originalRows: data.length,
         loadedRows: rowsOrder.value.length,
+        skippedEmptyRows,
+        filterRate: `${Math.round(skippedEmptyRows / data.length * 100)}%`,
         minRowsRequired: minRows.value,
         firstRowId: rowsOrder.value[0],
         firstRowCells: (_a = newMap.get(rowsOrder.value[0])) == null ? void 0 : _a.cells.length
@@ -3802,23 +3801,36 @@ const useDataGridStore = (storeId = "dataGrid") => {
       validatedCells.value.clear();
       changedCellsSinceValidation.value.clear();
     }
-    function getCellsNeedingValidation(forceValidateAll = false) {
+    function getCellsNeedingValidation(forceValidateAll = false, columnsWithRules) {
       console.log("[getCellsNeedingValidation] 🔍 START", {
         totalRows: rows.value.length,
         validatedCellsCount: validatedCells.value.size,
         changedCellsCount: changedCellsSinceValidation.value.size,
-        forceValidateAll
+        forceValidateAll,
+        hasColumnsWithRules: !!columnsWithRules
       });
-      const columnsToValidate = new Set(
+      const visibleColumns = new Set(
         columns.value.filter((col) => col.visibleForGrid !== false).map((col) => col.name)
       );
+      const columnsToValidate = columnsWithRules && columnsWithRules.size > 0 ? new Set([...visibleColumns].filter((col) => columnsWithRules.has(col))) : visibleColumns;
+      console.log("[getCellsNeedingValidation] 🔍 Column filtering:", {
+        totalColumns: columns.value.length,
+        visibleColumns: visibleColumns.size,
+        columnsWithRules: (columnsWithRules == null ? void 0 : columnsWithRules.size) ?? "N/A",
+        columnsToValidate: columnsToValidate.size,
+        skippedColumns: visibleColumns.size - columnsToValidate.size,
+        filterRate: columnsWithRules ? `${Math.round((1 - columnsToValidate.size / visibleColumns.size) * 100)}% skipped` : "N/A (no filter)"
+      });
       const cellsToValidate = [];
       let emptyRowsSkipped = 0;
       let alreadyValidatedCells = 0;
       let changedCells = 0;
       let neverValidatedCells = 0;
+      let skippedInvisibleCells = 0;
+      let skippedNoRulesCells = 0;
       for (const row of rows.value) {
-        const isEmpty = row.cells.every(
+        const visibleCells = row.cells.filter((cell) => columnsToValidate.has(cell.columnName));
+        const isEmpty = visibleCells.every(
           (cell) => cell.value === null || cell.value === void 0 || cell.value === ""
         );
         if (isEmpty) {
@@ -3826,7 +3838,14 @@ const useDataGridStore = (storeId = "dataGrid") => {
           continue;
         }
         for (const cell of row.cells) {
-          if (!columnsToValidate.has(cell.columnName)) {
+          const isVisible = visibleColumns.has(cell.columnName);
+          const hasRules = columnsWithRules ? columnsWithRules.has(cell.columnName) : true;
+          if (!isVisible) {
+            skippedInvisibleCells++;
+            continue;
+          }
+          if (columnsWithRules && !hasRules) {
+            skippedNoRulesCells++;
             continue;
           }
           const cellKey = `${cell.rowId}:${cell.columnName}`;
@@ -3853,6 +3872,9 @@ const useDataGridStore = (storeId = "dataGrid") => {
         changedSinceValidation: changedCells,
         alreadyValidated: alreadyValidatedCells,
         emptyRowsSkipped,
+        skippedInvisibleCells,
+        skippedNoRulesCells,
+        // ✅ RIEŠENIE #3: CRITICAL METRIC!
         sampleCells: cellsToValidate.slice(0, 3).map((c) => `${c.rowId}:${c.columnName}`)
       });
       return cellsToValidate;
@@ -3865,6 +3887,24 @@ const useDataGridStore = (storeId = "dataGrid") => {
       minRows.value = newMinRows;
       ensureMinimumRows();
       console.log(`[dataGridStore] setMinRows: ${newMinRows}`);
+    }
+    function clearAllData() {
+      console.log("[dataGridStore] clearAllData called - clearing all state");
+      rowsMap.value.clear();
+      rowsOrder.value = [];
+      selectedCells.value.clear();
+      checkedRows.value = [];
+      pressedCell.value = null;
+      isDragging.value = false;
+      wasCtrlPressed.value = false;
+      validatedCells.value.clear();
+      changedCellsSinceValidation.value.clear();
+      sortColumnsMap.value.clear();
+      sortColumnsOrder.value = [];
+      filterExpression.value = null;
+      searchQuery.value = "";
+      currentPage.value = 1;
+      console.log("[dataGridStore] All data cleared successfully");
     }
     return {
       // State
@@ -3924,9 +3964,13 @@ const useDataGridStore = (storeId = "dataGrid") => {
       markCellValidated,
       clearValidationTracking,
       getCellsNeedingValidation,
-      setMinRows
+      setMinRows,
+      clearAllData
+      // ✅ RIEŠENIE #3: Export cleanup method
     };
   });
+  storeCache.set(storeId, storeDefinition);
+  console.log("[useDataGridStore] Store definition cached for:", storeId);
   return storeDefinition;
 };
 function useValidation() {
@@ -5710,7 +5754,7 @@ const _export_sfc = (sfc, props2) => {
   }
   return target;
 };
-const DataGridHeader = /* @__PURE__ */ _export_sfc(_sfc_main$9, [["__scopeId", "data-v-3388de6c"]]);
+const DataGridHeader = /* @__PURE__ */ _export_sfc(_sfc_main$9, [["__scopeId", "data-v-d456deec"]]);
 const _hoisted_1$7 = ["innerHTML"];
 const _sfc_main$8 = /* @__PURE__ */ defineComponent({
   __name: "DataGridCell",
@@ -5725,7 +5769,6 @@ const _sfc_main$8 = /* @__PURE__ */ defineComponent({
     const props2 = __props;
     const emit = __emit;
     const store = useDataGridStore(props2.gridId)();
-    const { isAutoRowHeightEnabled } = storeToRefs(store);
     const validation = inject("validation", null);
     const validateCellThrottled = (validation == null ? void 0 : validation.validateCellThrottled) || (() => {
     });
@@ -5779,9 +5822,9 @@ const _sfc_main$8 = /* @__PURE__ */ defineComponent({
         "cell--validation-error": ((_a = validationError.value) == null ? void 0 : _a.severity) === "Error" || ((_b = validationError.value) == null ? void 0 : _b.severity) === "Critical",
         "cell--validation-warning": ((_c = validationError.value) == null ? void 0 : _c.severity) === "Warning" || ((_d = validationError.value) == null ? void 0 : _d.severity) === "Info",
         "cell--readonly": props2.column.isReadOnly,
-        "cell--auto-height": isAutoRowHeightEnabled.value,
+        "cell--auto-height": store.isAutoRowHeightEnabled,
         // Special case: has newlines but AutoRowHeight is OFF - still wrap by newlines only
-        "cell--has-newlines": hasNewlines.value && !isAutoRowHeightEnabled.value
+        "cell--has-newlines": hasNewlines.value && !store.isAutoRowHeightEnabled
       };
     });
     const cellStyle = computed(() => {
@@ -6085,7 +6128,7 @@ const _sfc_main$8 = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const DataGridCell = /* @__PURE__ */ _export_sfc(_sfc_main$8, [["__scopeId", "data-v-20384ad5"]]);
+const DataGridCell = /* @__PURE__ */ _export_sfc(_sfc_main$8, [["__scopeId", "data-v-46101a22"]]);
 const _hoisted_1$6 = {
   key: 0,
   class: "row-number"
@@ -6627,18 +6670,30 @@ const _hoisted_4$3 = {
 };
 const _hoisted_5$3 = { class: "progress-bar-wrapper" };
 const _hoisted_6$2 = { class: "progress-text" };
-const _hoisted_7$2 = { class: "grid-toolbar" };
-const _hoisted_8$2 = { class: "toolbar-section" };
-const _hoisted_9$2 = ["title"];
-const _hoisted_10$2 = { class: "toolbar-section" };
-const _hoisted_11$2 = ["disabled"];
-const _hoisted_12$2 = ["disabled"];
-const _hoisted_13$2 = {
+const _hoisted_7$2 = {
   key: 1,
+  class: "loading-overlay"
+};
+const _hoisted_8$2 = { class: "loading-content" };
+const _hoisted_9$2 = { class: "loading-text" };
+const _hoisted_10$2 = {
+  key: 0,
+  class: "progress-container"
+};
+const _hoisted_11$2 = { class: "progress-bar-wrapper" };
+const _hoisted_12$2 = { class: "progress-text" };
+const _hoisted_13$2 = { class: "grid-toolbar" };
+const _hoisted_14$2 = { class: "toolbar-section" };
+const _hoisted_15$1 = ["title"];
+const _hoisted_16$1 = { class: "toolbar-section" };
+const _hoisted_17 = ["disabled"];
+const _hoisted_18 = ["disabled"];
+const _hoisted_19 = {
+  key: 2,
   class: "hidden-columns-panel"
 };
-const _hoisted_14$2 = ["onClick", "title"];
-const _hoisted_15$1 = { class: "grid-container" };
+const _hoisted_20 = ["onClick", "title"];
+const _hoisted_21 = { class: "grid-container" };
 const _sfc_main$3 = /* @__PURE__ */ defineComponent({
   __name: "DataGrid",
   props: {
@@ -6792,6 +6847,13 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
     const isBackendConnected = ref(false);
     const isLoadingFromBackend = ref(false);
     const isSavingToBackend = ref(false);
+    const loadingState = ref({
+      isLoading: false,
+      operation: "",
+      progress: 0,
+      total: 0,
+      percentage: 0
+    });
     const scrollerRef = ref();
     const getSelectedRows = () => {
       const selectedCells = Array.from(store.selectedCells);
@@ -6910,8 +6972,10 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
           // Default: 200
           isSortable: col.isSortable ?? false,
           // Default: false
-          isFilterable: col.isFilterable ?? false
+          isFilterable: col.isFilterable ?? false,
           // Default: false
+          visibleForGrid: col.visibleForGrid ?? true
+          // ✅ RIEŠENIE #6: EXPLICIT DEFAULT
         };
       });
     });
@@ -7004,7 +7068,15 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
       logger.info("🔄 Component before mount");
     });
     onBeforeUnmount(() => {
-      logger.info("🔄 Component before unmount");
+      logger.info("🔄 Component before unmount - starting cleanup");
+      if (validation) {
+        console.log("[DataGrid] Clearing validation state...");
+        validation.clearValidationErrors();
+        validation.validationRules.value.clear();
+      }
+      console.log("[DataGrid] Clearing store data...");
+      store.clearAllData();
+      logger.info("✅ Component cleanup complete");
     });
     onUnmounted(() => {
       logger.info("🗑️ Component unmounted - final cleanup");
@@ -7043,11 +7115,31 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
           totalRows: store.rows.length,
           totalColumns: store.columns.length
         });
+        console.info("═══════════════════════════════════════════════════");
+        console.info("🔍 VALIDATION START");
+        console.info(`   Rows: ${store.rows.length}, Columns: ${store.columns.length}`);
+        console.info("═══════════════════════════════════════════════════");
         if (!store.config.enableValidation || !validation) {
           console.log("[validateAllCellsInBatches] ⚠️ SKIPPED - validation not enabled or not available");
           return;
         }
-        const cellsToValidate = store.getCellsNeedingValidation(true);
+        const columnsWithRules = /* @__PURE__ */ new Set();
+        for (const [columnName, rules] of validation.validationRules.value.entries()) {
+          if (rules.length > 0) {
+            columnsWithRules.add(columnName);
+          }
+        }
+        console.log("[validateAllCellsInBatches] 🔍 Columns with rules:", {
+          totalColumns: store.columns.length,
+          columnsWithRules: columnsWithRules.size,
+          columns: Array.from(columnsWithRules)
+        });
+        if (columnsWithRules.size === 0) {
+          console.log("[validateAllCellsInBatches] ⚠️ NO VALIDATION RULES - skipping validation entirely");
+          console.log("[validateAllCellsInBatches] ✅ SKIPPED - 0 cells validated (no rules defined)");
+          return;
+        }
+        const cellsToValidate = store.getCellsNeedingValidation(true, columnsWithRules);
         console.log("[validateAllCellsInBatches] 📋 Cells needing validation:", {
           count: cellsToValidate.length,
           sample: cellsToValidate.slice(0, 5).map((c) => `${c.rowId}:${c.columnName}`)
@@ -7116,8 +7208,14 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
           totalRequested: cellsToValidate.length,
           success: validatedCount === cellsToValidate.length
         });
+        console.info("═══════════════════════════════════════════════════");
+        console.info(`✅ VALIDATION SUCCESS - ${validatedCount} cells validated`);
+        console.info(`   Total errors: ${validation.validationErrors.value.length}`);
+        console.info("═══════════════════════════════════════════════════");
       } catch (error) {
-        console.error("[validateAllCellsInBatches] ❌ ERROR:", error);
+        console.error("═══════════════════════════════════════════════════");
+        console.error("❌ VALIDATION ERROR:", error);
+        console.error("═══════════════════════════════════════════════════");
         throw error;
       } finally {
         isValidating.value = false;
@@ -7373,12 +7471,24 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
     async function handleCellEditComplete(rowId, columnName, value) {
       console.log(`[DataGrid] handleCellEditComplete: rowId=${rowId}, columnName=${columnName}, newValue=${value}, autoValidate=${store.config.autoValidate}, autoRowHeight=${store.isAutoRowHeightEnabled}`);
       store.updateCell(rowId, columnName, value);
-      if (store.config.autoValidate && store.config.enableValidation && validation) {
-        const row = store.rows.find((r) => r.rowId === rowId);
-        const rowCells = row == null ? void 0 : row.cells.map((c) => ({ columnName: c.columnName, value: c.value }));
-        await validation.validateCellThrottled(rowId, columnName, value, rowCells);
-        const hasErrors = validation.validationErrors[rowId] && validation.validationErrors[rowId].length > 0;
-        console.log("[DataGrid] Cell validated after edit:", { rowId, columnName, hasErrors });
+      const column = store.columns.find((c) => c.name === columnName);
+      if (!column) {
+        console.warn("[DataGrid] handleCellEditComplete: Column not found:", columnName);
+        return;
+      }
+      if (column.visibleForGrid === false) {
+        console.log("[DataGrid] handleCellEditComplete: Skipping validation - hidden column:", columnName);
+      } else if (store.config.autoValidate && store.config.enableValidation && validation) {
+        const hasRules = validation.validationRules.value.has(columnName) && validation.validationRules.value.get(columnName).length > 0;
+        if (!hasRules) {
+          console.log("[DataGrid] handleCellEditComplete: Skipping validation - no rules:", columnName);
+        } else {
+          const row = store.rows.find((r) => r.rowId === rowId);
+          const rowCells = row == null ? void 0 : row.cells.map((c) => ({ columnName: c.columnName, value: c.value }));
+          await validation.validateCellThrottled(rowId, columnName, value, rowCells);
+          const hasErrors = validation.validationErrors[rowId] && validation.validationErrors[rowId].length > 0;
+          console.log("[DataGrid] Cell validated after edit:", { rowId, columnName, hasErrors });
+        }
       }
       if (store.isAutoRowHeightEnabled) {
         console.log("[DataGrid] Recalculating row height:", { rowId });
@@ -7936,6 +8046,16 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
       }
       isLoadingFromBackend.value = true;
       isProcessing2.value = true;
+      loadingState.value = {
+        isLoading: true,
+        operation: "Loading data from backend...",
+        progress: 0,
+        total: 0,
+        percentage: 0
+      };
+      console.info("═══════════════════════════════════════════════════");
+      console.info("📥 DATA LOADING START");
+      console.info("═══════════════════════════════════════════════════");
       try {
         console.log("[loadDataFromBackend] Calling gridApi.getData()...");
         const response = await gridApi.getData();
@@ -7945,6 +8065,8 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
           hasError: !!response.error
         });
         if (response.success && response.data) {
+          loadingState.value.operation = "Processing data...";
+          loadingState.value.total = response.data.length;
           console.log("[loadDataFromBackend] Converting data format...");
           const rows = response.data.map((row, index2) => ({
             __rowId: row.RowId || `row-${Date.now()}-${index2}`,
@@ -7954,11 +8076,17 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
             // Spread Data dictionary to root level
           }));
           console.log("[loadDataFromBackend] Converted rows:", rows.length);
+          loadingState.value.progress = rows.length;
+          loadingState.value.percentage = 100;
           console.log("[loadDataFromBackend] Calling clearValidationTracking()...");
           store.clearValidationTracking();
           console.log("[loadDataFromBackend] Calling store.loadRows()...");
           store.loadRows(rows);
           console.log(`[loadDataFromBackend] ✅ Loaded ${rows.length} rows from backend`);
+          loadingState.value.operation = "Data loaded successfully";
+          console.info("═══════════════════════════════════════════════════");
+          console.info(`✅ DATA LOADING SUCCESS - ${rows.length} rows loaded`);
+          console.info("═══════════════════════════════════════════════════");
           if (store.config.autoValidate && store.config.enableValidation) {
             const rulesCount = ((_c = (_b = validation == null ? void 0 : validation.validationRules) == null ? void 0 : _b.value) == null ? void 0 : _c.size) || 0;
             console.log("[loadDataFromBackend] Auto-validation check:", {
@@ -7983,15 +8111,20 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
             console.log("[loadDataFromBackend] ⚠️ Auto-validation disabled in config");
           }
         } else {
-          console.error("[loadDataFromBackend] ❌ Failed to load data:", response.error);
+          console.error("═══════════════════════════════════════════════════");
+          console.error("❌ DATA LOADING ERROR:", response.error);
+          console.error("═══════════════════════════════════════════════════");
           alert(`Failed to load data: ${response.error}`);
         }
       } catch (error) {
-        console.error("[loadDataFromBackend] ❌ EXCEPTION:", error);
+        console.error("═══════════════════════════════════════════════════");
+        console.error("💥 DATA LOADING FATAL EXCEPTION:", error);
+        console.error("═══════════════════════════════════════════════════");
         alert(`Error loading data: ${error instanceof Error ? error.message : "Unknown error"}`);
       } finally {
         isLoadingFromBackend.value = false;
         isProcessing2.value = false;
+        loadingState.value.isLoading = false;
         console.log("[loadDataFromBackend] 🔵 END");
       }
     }
@@ -8001,7 +8134,21 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
     async function saveDataToBackend() {
       isSavingToBackend.value = true;
       try {
-        const data = store.rows.map((row) => {
+        const visibleDataColumns = dataColumns.value.filter(
+          (col) => !col.specialType && col.visibleForGrid !== false
+        );
+        const data = [];
+        let skippedEmptyRows = 0;
+        for (const row of store.rows) {
+          const hasVisibleData = visibleDataColumns.some((col) => {
+            const cell = row.cells.find((c) => c.columnName === col.name);
+            const value = cell == null ? void 0 : cell.value;
+            return value !== null && value !== void 0 && value !== "";
+          });
+          if (!hasVisibleData) {
+            skippedEmptyRows++;
+            continue;
+          }
           const rowData = {};
           dataColumns.value.forEach((col) => {
             if (!col.specialType) {
@@ -8011,13 +8158,19 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
               }
             }
           });
-          return rowData;
+          data.push(rowData);
+        }
+        console.log("[saveDataToBackend] 📦 Data prepared:", {
+          totalRows: store.rows.length,
+          savedRows: data.length,
+          skippedEmptyRows,
+          filterRate: `${Math.round(skippedEmptyRows / store.rows.length * 100)}%`
         });
         const response = await gridApi.importData(data);
         if (response.success) {
-          console.log(`Saved ${data.length} rows to backend`);
+          console.log(`✅ Saved ${data.length} rows to backend`);
         } else {
-          console.error("Failed to save data to backend:", response.error);
+          console.error("❌ Failed to save data to backend:", response.error);
           alert(`Failed to save data: ${response.error}`);
         }
       } catch (error) {
@@ -8129,28 +8282,43 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
             ])) : createCommentVNode("", true)
           ])
         ])) : createCommentVNode("", true),
-        createElementVNode("div", _hoisted_7$2, [
+        loadingState.value.isLoading ? (openBlock(), createElementBlock("div", _hoisted_7$2, [
           createElementVNode("div", _hoisted_8$2, [
+            _cache[2] || (_cache[2] = createElementVNode("div", { class: "loading-spinner" }, null, -1)),
+            createElementVNode("div", _hoisted_9$2, toDisplayString(loadingState.value.operation), 1),
+            loadingState.value.total > 0 ? (openBlock(), createElementBlock("div", _hoisted_10$2, [
+              createElementVNode("div", _hoisted_11$2, [
+                createElementVNode("div", {
+                  class: "progress-bar",
+                  style: normalizeStyle({ width: loadingState.value.percentage + "%" })
+                }, null, 4)
+              ]),
+              createElementVNode("div", _hoisted_12$2, toDisplayString(loadingState.value.progress) + " / " + toDisplayString(loadingState.value.total) + " (" + toDisplayString(loadingState.value.percentage) + "%) ", 1)
+            ])) : createCommentVNode("", true)
+          ])
+        ])) : createCommentVNode("", true),
+        createElementVNode("div", _hoisted_13$2, [
+          createElementVNode("div", _hoisted_14$2, [
             createElementVNode("button", {
               class: normalizeClass(["toolbar-button", { "toolbar-button--active": unref(store).isAutoRowHeightEnabled }]),
               onClick: toggleAutoRowHeight,
               title: unref(store).isAutoRowHeightEnabled ? "Disable auto row height" : "Enable auto row height"
-            }, " 📏 Auto Height " + toDisplayString(unref(store).isAutoRowHeightEnabled ? "ON" : "OFF"), 11, _hoisted_9$2)
+            }, " 📏 Auto Height " + toDisplayString(unref(store).isAutoRowHeightEnabled ? "ON" : "OFF"), 11, _hoisted_15$1)
           ]),
-          createElementVNode("div", _hoisted_10$2, [
+          createElementVNode("div", _hoisted_16$1, [
             createElementVNode("button", {
               class: normalizeClass(["toolbar-button", { "toolbar-button--disabled": !isBackendConnected.value }]),
               disabled: isLoadingFromBackend.value || !isBackendConnected.value,
               onClick: _cache[0] || (_cache[0] = //@ts-ignore
               (...args) => unref(loadDataFromBackend) && unref(loadDataFromBackend)(...args)),
               title: "Load data from backend"
-            }, toDisplayString(isLoadingFromBackend.value ? "⏳ Loading..." : "⬇️ Load from Backend"), 11, _hoisted_11$2),
+            }, toDisplayString(isLoadingFromBackend.value ? "⏳ Loading..." : "⬇️ Load from Backend"), 11, _hoisted_17),
             createElementVNode("button", {
               class: normalizeClass(["toolbar-button", { "toolbar-button--disabled": !isBackendConnected.value }]),
               disabled: isSavingToBackend.value || !isBackendConnected.value,
               onClick: saveDataToBackend,
               title: "Save data to backend"
-            }, toDisplayString(isSavingToBackend.value ? "⏳ Saving..." : "⬆️ Save to Backend"), 11, _hoisted_12$2),
+            }, toDisplayString(isSavingToBackend.value ? "⏳ Saving..." : "⬆️ Save to Backend"), 11, _hoisted_18),
             createElementVNode("span", {
               class: normalizeClass(["connection-status", { "connection-status--connected": isBackendConnected.value, "connection-status--disconnected": !isBackendConnected.value }]),
               onClick: checkBackendConnection,
@@ -8158,15 +8326,15 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
             }, toDisplayString(isBackendConnected.value ? "🟢 Connected" : "🔴 Disconnected"), 3)
           ])
         ]),
-        __props.showHiddenColumnsPanel !== false && hiddenColumns.value.length > 0 ? (openBlock(), createElementBlock("div", _hoisted_13$2, [
-          _cache[2] || (_cache[2] = createElementVNode("span", { class: "hidden-columns-label" }, "Hidden columns:", -1)),
+        __props.showHiddenColumnsPanel !== false && hiddenColumns.value.length > 0 ? (openBlock(), createElementBlock("div", _hoisted_19, [
+          _cache[3] || (_cache[3] = createElementVNode("span", { class: "hidden-columns-label" }, "Hidden columns:", -1)),
           (openBlock(true), createElementBlock(Fragment, null, renderList(hiddenColumns.value, (col) => {
             return openBlock(), createElementBlock("button", {
               key: col.name,
               class: "show-column-button",
               onClick: ($event) => showColumn(col.name),
               title: `Show column: ${col.header}`
-            }, toDisplayString(col.header), 9, _hoisted_14$2);
+            }, toDisplayString(col.header), 9, _hoisted_20);
           }), 128)),
           createElementVNode("button", {
             class: "show-all-button",
@@ -8174,7 +8342,7 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
             title: "Show all columns"
           }, " Show All ")
         ])) : createCommentVNode("", true),
-        createElementVNode("div", _hoisted_15$1, [
+        createElementVNode("div", _hoisted_21, [
           createVNode(DataGridHeader, {
             columns: allColumns.value,
             "grid-template-columns": gridTemplateColumns.value,
@@ -8249,7 +8417,7 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const DataGrid = /* @__PURE__ */ _export_sfc(_sfc_main$3, [["__scopeId", "data-v-be18d70c"]]);
+const DataGrid = /* @__PURE__ */ _export_sfc(_sfc_main$3, [["__scopeId", "data-v-a910b5e3"]]);
 const _hoisted_1$2 = { class: "listbox-container" };
 const _hoisted_2$2 = {
   key: 0,
@@ -8686,9 +8854,9 @@ const _sfc_main = /* @__PURE__ */ defineComponent({
                   onChange: updateFilters
                 }, [
                   _cache[1] || (_cache[1] = createElementVNode("option", { value: "" }, "Select column...", -1)),
-                  (openBlock(true), createElementBlock(Fragment, null, renderList(dataColumns.value, (col) => {
+                  (openBlock(true), createElementBlock(Fragment, null, renderList(dataColumns.value, (col, colIndex) => {
                     return openBlock(), createElementBlock("option", {
-                      key: col.name,
+                      key: `col-${colIndex}`,
                       value: col.name
                     }, toDisplayString(col.header), 9, _hoisted_8);
                   }), 128))
@@ -8700,7 +8868,7 @@ const _sfc_main = /* @__PURE__ */ defineComponent({
                   class: "filter-row__operator-select",
                   onChange: updateFilters
                 }, [..._cache[2] || (_cache[2] = [
-                  createStaticVNode('<option value="Equals" data-v-69cbf87e>Equals</option><option value="NotEquals" data-v-69cbf87e>Not Equals</option><option value="Contains" data-v-69cbf87e>Contains</option><option value="StartsWith" data-v-69cbf87e>Starts With</option><option value="EndsWith" data-v-69cbf87e>Ends With</option><option value="GreaterThan" data-v-69cbf87e>Greater Than</option><option value="LessThan" data-v-69cbf87e>Less Than</option><option value="GreaterThanOrEquals" data-v-69cbf87e>≥</option><option value="LessThanOrEquals" data-v-69cbf87e>≤</option><option value="IsEmpty" data-v-69cbf87e>Is Empty</option><option value="IsNotEmpty" data-v-69cbf87e>Is Not Empty</option>', 11)
+                  createStaticVNode('<option value="Equals" data-v-ef184647>Equals</option><option value="NotEquals" data-v-ef184647>Not Equals</option><option value="Contains" data-v-ef184647>Contains</option><option value="StartsWith" data-v-ef184647>Starts With</option><option value="EndsWith" data-v-ef184647>Ends With</option><option value="GreaterThan" data-v-ef184647>Greater Than</option><option value="LessThan" data-v-ef184647>Less Than</option><option value="GreaterThanOrEquals" data-v-ef184647>≥</option><option value="LessThanOrEquals" data-v-ef184647>≤</option><option value="IsEmpty" data-v-ef184647>Is Empty</option><option value="IsNotEmpty" data-v-ef184647>Is Not Empty</option>', 11)
                 ])], 40, _hoisted_9), [
                   [vModelSelect, filter.operator]
                 ]),
@@ -8761,7 +8929,7 @@ const _sfc_main = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const FilterRow = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-69cbf87e"]]);
+const FilterRow = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-ef184647"]]);
 function install(app) {
   app.component("DataGrid", DataGrid);
   app.component("ListBox", ListBox);
