@@ -1,0 +1,30 @@
+{
+  "dataGrid": {
+    "headerBackground": "#2c3e50",
+    "headerColor": "#ffffff",
+    "headerBorderColor": "#34495e",
+    "rowBackground": "#ffffff",
+    "rowAlternateBackground": "#f8f9fa",
+    "rowHoverBackground": "#e3f2fd",
+    "rowSelectedBackground": "#bbdefb",
+    "rowBorderColor": "#dee2e6",
+    "textColor": "#212529",
+    "textColorSecondary": "#6c757d",
+    "errorBackground": "#ffebee",
+    "errorColor": "#c62828",
+    "warningBackground": "#fff3e0",
+    "warningColor": "#ef6c00"
+  },
+  "listBox": {
+    "background": "#ffffff",
+    "borderColor": "#ced4da",
+    "itemBackground": "#ffffff",
+    "itemHoverBackground": "#f8f9fa",
+    "itemSelectedBackground": "#007bff",
+    "itemSelectedColor": "#ffffff",
+    "itemColor": "#212529",
+    "resetButtonBackground": "#6c757d",
+    "resetButtonHoverBackground": "#5a6268",
+    "resetButtonColor": "#ffffff"
+  }
+}

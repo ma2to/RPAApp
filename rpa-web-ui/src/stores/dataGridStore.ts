@@ -49,12 +49,13 @@ export interface GridConfig {
   showValidationAlerts: boolean
   showDeleteButton: boolean
   showInsertButton: boolean
-  minRowHeight?: number  // Minimum row height in pixels (default: 25)
+  minRowHeight?: number  // Minimum row height in pixels (default: 35)  ✅ RIEŠENIE #2B
 }
 
 // ✅ RIEŠENIE #2: Cache store definitions to prevent duplicate creation
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const storeCache = new Map<string, any>()
+const pendingStores = new Set<string>()  // ✅ RIEŠENIE #2: Track stores being created right now
 
 export const useDataGridStore = (storeId: string = 'dataGrid') => {
   if (!storeId || typeof storeId !== 'string') {
@@ -62,12 +63,20 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
     throw new Error(`Invalid storeId: ${storeId}`)
   }
 
-  // ✅ RIEŠENIE #2: Check cache first
+  // ✅ RIEŠENIE #2: Check cache first - already created
   if (storeCache.has(storeId)) {
     console.log('[useDataGridStore] Using CACHED store definition for:', storeId)
     return storeCache.get(storeId)!
   }
 
+  // ✅ RIEŠENIE #2: Check if another call is creating this store RIGHT NOW
+  if (pendingStores.has(storeId)) {
+    console.error('[useDataGridStore] ⚠️ RACE CONDITION DETECTED! Store is being created by another component:', storeId)
+    throw new Error(`[useDataGridStore] Race condition: Store ${storeId} is already being created. This indicates a timing issue.`)
+  }
+
+  // ✅ RIEŠENIE #2: Mark as "being created" IMMEDIATELY before starting
+  pendingStores.add(storeId)
   console.log('[useDataGridStore] Creating NEW store definition for:', storeId)
   const storeDefinition = defineStore(storeId, () => {
   // State
@@ -98,7 +107,8 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
     showCheckbox: false,
     showValidationAlerts: true,
     showDeleteButton: false,
-    showInsertButton: false
+    showInsertButton: false,
+    minRowHeight: 35  // ✅ RIEŠENIE #2C: Explicit default (32 + 3 = 35)
   })
 
   // Selection state (based on WinUI3 patterns)
@@ -114,7 +124,8 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
   const changedCellsSinceValidation = ref<Set<string>>(new Set())  // Cells changed since last validation
 
   // Minimum rows configuration (ensures table always has visible rows)
-  const minRows = ref<number>(5)  // Default minimum: 5 empty rows
+  // ✅ RIEŠENIE #1A: Default changed to 1 (tabuľka nikdy nie je úplne prázdna)
+  const minRows = ref<number>(1)  // Default minimum: 1 empty row
 
   // ✅ RIEŠENIE E: Computed properties - convert Map to Array for rendering
   const rows = computed(() => {
@@ -153,33 +164,45 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
   const totalPages = computed(() => Math.ceil(totalRows.value / pageSize.value))
 
   const visibleRows = computed(() => {
+    console.log('[visibleRows] 🔍 START')
     let filteredRows = rows.value
+    console.log('[visibleRows] Total rows:', filteredRows.length)
 
     // Apply filtering
     if (filterExpression.value) {
+      const before = filteredRows.length
       // ✅ FIX: Pass store interface so filterRows can access checkbox state
       const storeInterface = {
         checkedRows: checkedRows.value,
         isRowChecked: (rowId: string) => checkedRows.value.includes(rowId)
       }
       filteredRows = filterRows(filteredRows, filterExpression.value, storeInterface)
+      console.log('[visibleRows] After filter:', filteredRows.length, '(filtered:', before - filteredRows.length, ')')
     }
 
     // Apply search filtering
     if (searchQuery.value && searchResults.value.length > 0) {
+      const before = filteredRows.length
       const searchRowIds = new Set(searchResults.value.map(r => r.rowId))
       filteredRows = filteredRows.filter(row => searchRowIds.has(row.rowId))
+      console.log('[visibleRows] After search:', filteredRows.length, '(filtered:', before - filteredRows.length, ')')
     }
 
     // Apply sorting
     if (sortColumns.value.length > 0) {
       filteredRows = sortRows(filteredRows, sortColumns.value)
+      console.log('[visibleRows] Sorted by:', sortColumns.value.map((s: { columnName: string; direction: string }) => `${s.columnName} ${s.direction}`).join(', '))
     }
 
     // Apply pagination
     const start = (currentPage.value - 1) * pageSize.value
     const end = start + pageSize.value
-    return filteredRows.slice(start, end)
+    console.log('[visibleRows] Pagination:', { currentPage: currentPage.value, pageSize: pageSize.value, start, end, total: filteredRows.length })
+
+    const result = filteredRows.slice(start, end)
+    console.log('[visibleRows] ✅ RETURNING:', result.length, 'rows')
+
+    return result
   })
 
   // Helper: Create empty row with all columns
@@ -188,7 +211,7 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
     return {
       rowId,
       rowIndex,
-      height: config.value.minRowHeight || 25,
+      height: config.value.minRowHeight || 35,  // ✅ RIEŠENIE #2B: 25 → 35
       cells: columns.value.map(col => ({
         rowId,
         columnName: col.name,
@@ -449,6 +472,13 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
       console.log('[dataGridStore] deleteRow complete:', {
         rowsAfter: rowsOrder.value.length
       })
+
+      // ✅ RIEŠENIE #2: Ak bol toto posledný riadok, vytvor nový prázdny
+      // Tabuľka NIKDY nie je úplne prázdna
+      if (rowsOrder.value.length === 0) {
+        console.log('[dataGridStore] deleteRow: Table is empty after deletion, creating minimum rows')
+        ensureMinimumRows()  // Vytvorí minRows prázdnych riadkov (default: 1)
+      }
     } else {
       console.warn('[dataGridStore] deleteRow: row not found', { rowId })
     }
@@ -469,7 +499,7 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
     const newRow: GridRow = {
       rowId: newRowId,
       rowIndex: index + 1,
-      height: 32,
+      height: config.value.minRowHeight || 35,  // ✅ RIEŠENIE #2B: 32 → 35
       cells: columns.value
         .filter(col => !col.specialType)
         .map(col => ({
@@ -521,7 +551,7 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
       const newRow: GridRow = {
         rowId: newRowId,
         rowIndex: insertIndex + i,
-        height: 32,
+        height: config.value.minRowHeight || 35,  // ✅ RIEŠENIE #2B: 32 → 35
         cells: columns.value
           .filter(col => !col.specialType)
           .map(col => ({
@@ -619,10 +649,12 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
   }
 
   function initializeEmptyRows(count?: number) {
-    const rowCount = count || pageSize.value
+    const rowCount = count || minRows.value  // ✅ RIEŠENIE #1B: Use minRows (default: 1) instead of pageSize
     console.log('[dataGridStore] initializeEmptyRows:', {
       requestedCount: count,
       rowCount,
+      minRowsValue: minRows.value,
+      pageSizeValue: pageSize.value,
       currentRowsLength: rows.value.length,
       columnsLength: columns.value.length
     })
@@ -636,7 +668,7 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
       const row: GridRow = {
         rowId,
         rowIndex: i,
-        height: 32,
+        height: config.value.minRowHeight || 35,  // ✅ RIEŠENIE #2B: 32 → 35
         cells: columns.value
           .filter(col => !col.specialType) // Don't create cells for special columns
           .map(col => ({
@@ -1101,6 +1133,36 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
     console.log('[dataGridStore] All data cleared successfully')
   }
 
+  /**
+   * Updates a specific column with new properties (reactive)
+   * ✅ RIEŠENIE #3A: Force reactivity by replacing entire column object
+   * @param columnName - Name of the column to update
+   * @param updates - Partial column object with properties to update
+   */
+  function updateColumn(columnName: string, updates: Partial<GridColumn>) {
+    const colIndex = columns.value.findIndex(c => c.name === columnName)
+    if (colIndex !== -1) {
+      const oldColumn = columns.value[colIndex]
+
+      // ✅ RIEŠENIE #3A: Replace entire object instead of mutating
+      columns.value[colIndex] = {
+        ...oldColumn,
+        ...updates
+      }
+
+      // ✅ RIEŠENIE #3A: CRITICAL - Trigger array reactivity by creating new array
+      columns.value = [...columns.value]
+
+      console.log(`[dataGridStore] updateColumn: ${columnName}`, {
+        oldWidth: oldColumn.width,
+        newWidth: updates.width,
+        updates
+      })
+    } else {
+      console.warn(`[dataGridStore] updateColumn: Column not found: ${columnName}`)
+    }
+  }
+
   return {
     // State
     rows,
@@ -1155,6 +1217,7 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
     endDragSelection,
     isCellSelected,
     setColumns,
+    updateColumn,    // ✅ RIEŠENIE #1: Reactive column updates
     ensureUniqueColumnNames,
     areNonEmptyRowsValid,
     markCellValidated,
@@ -1167,6 +1230,10 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
 
   // ✅ RIEŠENIE #2: Cache the store definition before returning
   storeCache.set(storeId, storeDefinition)
+
+  // ✅ RIEŠENIE #2: Remove from pending - creation complete
+  pendingStores.delete(storeId)
+
   console.log('[useDataGridStore] Store definition cached for:', storeId)
 
   // Return StoreDefinition - let component call it

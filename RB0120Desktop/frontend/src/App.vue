@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { AdvancedTable, ListBox, gridApi, SearchPanel, FilterRow } from 'rpa-web-ui'
 import type { GridColumn, ListBoxItem } from 'rpa-web-ui'
 
@@ -12,6 +12,12 @@ const table2Ref = ref<InstanceType<typeof AdvancedTable> | null>(null)
 const table3Ref = ref<InstanceType<typeof AdvancedTable> | null>(null)
 const table4Ref = ref<InstanceType<typeof AdvancedTable> | null>(null)
 const table5Ref = ref<InstanceType<typeof AdvancedTable> | null>(null)
+
+// ✅ RIEŠENIE #4: ListBox refs for GridAPI registration
+const listbox1Ref = ref<InstanceType<typeof ListBox> | null>(null)
+const listbox2Ref = ref<InstanceType<typeof ListBox> | null>(null)
+const listbox3Ref = ref<InstanceType<typeof ListBox> | null>(null)
+const listbox4Ref = ref<InstanceType<typeof ListBox> | null>(null)
 
 // Stĺpce - samostatné pre každú tabuľku (aby neboli zdieľané)
 const table1Columns = ref<GridColumn[]>([])
@@ -27,30 +33,21 @@ const gridConfig = ref<any>(null)
 const isLoading = ref(true)
 const errorMessage = ref<string | null>(null)
 
-// ListBox items
-const listbox1Items = ref<ListBoxItem[]>([
-  { value: '1', name: 'Možnosť 1' },
-  { value: '2', name: 'Možnosť 2' },
-  { value: '3', name: 'Možnosť 3' }
-])
+// ✅ RIEŠENIE #1: ListBox items - načítané z backendu (nie hardcoded)
+const listbox1Items = ref<ListBoxItem[]>([])
+const listbox2Items = ref<ListBoxItem[]>([])
+const listbox3Items = ref<ListBoxItem[]>([])
+const listbox4Items = ref<ListBoxItem[]>([])
 
-const listbox2Items = ref<ListBoxItem[]>([
-  { value: 'a', name: 'Alpha' },
-  { value: 'b', name: 'Beta' },
-  { value: 'c', name: 'Gamma' }
-])
+// ✅ RIEŠENIE #1: ListBox configs - načítané z backendu
+const listbox1Config = ref<any>(null)
+const listbox2Config = ref<any>(null)
+const listbox3Config = ref<any>(null)
+const listbox4Config = ref<any>(null)
 
-const listbox3Items = ref<ListBoxItem[]>([
-  { value: 'red', name: 'Červená' },
-  { value: 'green', name: 'Zelená' },
-  { value: 'blue', name: 'Modrá' }
-])
-
-const listbox4Items = ref<ListBoxItem[]>([
-  { value: '10', name: 'Desať' },
-  { value: '20', name: 'Dvadsať' },
-  { value: '30', name: 'Tridsať' }
-])
+// ✅ RIEŠENIE #2: Theme config - načítaný z backendu
+const dataGridTheme = ref<any>(null)
+const listBoxTheme = ref<any>(null)
 
 // Grid config pre tabuľku 1
 const table1Config = ref({
@@ -131,15 +128,220 @@ onMounted(async () => {
     }
     console.log('[DEBUG] Step 3 COMPLETE')
 
-    // 4. Set isLoading to false - tables will render
-    console.log('[DEBUG] Step 4: Setting isLoading=false...')
-    isLoading.value = false
-    console.log('✅ Initialization complete')
+    // 4. ✅ RIEŠENIE #1: Load ListBox configs from backend
+    console.log('[DEBUG] Step 4: Loading ListBox configs...')
+    try {
+      const [lb1, lb2, lb3, lb4] = await Promise.all([
+        gridApi.getListBoxConfig('listbox-1'),
+        gridApi.getListBoxConfig('listbox-2'),
+        gridApi.getListBoxConfig('listbox-3'),
+        gridApi.getListBoxConfig('listbox-4')
+      ])
+
+      if (lb1.success && lb1.data) {
+        listbox1Items.value = lb1.data.items || []
+        listbox1Config.value = lb1.data
+        console.log('✅ Loaded ListBox 1 config:', lb1.data.items?.length || 0, 'items')
+      }
+      if (lb2.success && lb2.data) {
+        listbox2Items.value = lb2.data.items || []
+        listbox2Config.value = lb2.data
+        console.log('✅ Loaded ListBox 2 config:', lb2.data.items?.length || 0, 'items')
+      }
+      if (lb3.success && lb3.data) {
+        listbox3Items.value = lb3.data.items || []
+        listbox3Config.value = lb3.data
+        console.log('✅ Loaded ListBox 3 config:', lb3.data.items?.length || 0, 'items')
+      }
+      if (lb4.success && lb4.data) {
+        listbox4Items.value = lb4.data.items || []
+        listbox4Config.value = lb4.data
+        console.log('✅ Loaded ListBox 4 config:', lb4.data.items?.length || 0, 'items')
+      }
+    } catch (lbError) {
+      console.warn('⚠️ ListBox configs failed, using empty arrays:', lbError)
+    }
     console.log('[DEBUG] Step 4 COMPLETE')
 
-    // 5. All tables will start empty - data will be loaded when user clicks button
-    console.log('[DEBUG] Step 5: All tables initialized with empty data')
+    // 5. ✅ RIEŠENIE #2: Load Theme config from backend
+    console.log('[DEBUG] Step 5: Loading Theme config...')
+    try {
+      const themeResponse = await gridApi.getThemeConfig()
+      if (themeResponse.success && themeResponse.data) {
+        dataGridTheme.value = themeResponse.data.dataGrid
+        listBoxTheme.value = themeResponse.data.listBox
+        console.log('✅ Loaded Theme config')
+      } else {
+        console.warn('⚠️ Theme config failed, using default themes')
+      }
+    } catch (themeError) {
+      console.warn('⚠️ Theme config failed, using default themes:', themeError)
+    }
+    console.log('[DEBUG] Step 5 COMPLETE')
+
+    // 6. Set isLoading to false - tables will render
+    console.log('[DEBUG] Step 6: Setting isLoading=false...')
+    isLoading.value = false
+    console.log('✅ Initialization complete')
+    console.log('[DEBUG] Step 6 COMPLETE')
+
+    // 7. ✅ RIEŠENIE #4: Register ListBoxes with GridAPI
+    console.log('[DEBUG] Step 7: Registering ListBoxes with GridAPI...')
+    // Wait for next tick to ensure components are mounted
+    await new Promise(resolve => setTimeout(resolve, 100))
+
+    if (listbox1Ref.value) {
+      gridApi.registerListBox('listbox-1', listbox1Ref.value)
+    }
+    if (listbox2Ref.value) {
+      gridApi.registerListBox('listbox-2', listbox2Ref.value)
+    }
+    if (listbox3Ref.value) {
+      gridApi.registerListBox('listbox-3', listbox3Ref.value)
+    }
+    if (listbox4Ref.value) {
+      gridApi.registerListBox('listbox-4', listbox4Ref.value)
+    }
+    console.log('✅ ListBoxes registered with GridAPI')
+    console.log('[DEBUG] Step 7 COMPLETE')
+
+    // 8. All tables will start empty - data will be loaded when user clicks button
+    console.log('[DEBUG] Step 8: All tables initialized with empty data')
     console.log('✅ Initialization complete - tables ready for data loading')
+
+    // ✅ KROK 9: Export table refs to window for backend access
+    console.log('[DEBUG] Step 9: Exporting table refs to window.__tableRefs...')
+
+    // @ts-ignore - global window extension
+    window.__tableRefs = {
+      table1: table1Ref,
+      table2: table2Ref,
+      table3: table3Ref,
+      table4: table4Ref,
+      table5: table5Ref
+    }
+
+    // @ts-ignore - global window extension
+    window.__tableAPI = {
+      /**
+       * Load data into specified table
+       * Called from C# backend via ExecuteScriptAsync
+       */
+      loadData(tableId: string, data: any[]) {
+        console.log(`[TableAPI] ✅ loadData CALLED - tableId: ${tableId}, rows: ${data.length}`)
+        const tableRef = (window as any).__tableRefs[tableId]
+
+        if (!tableRef || !tableRef.value) {
+          console.error(`[TableAPI] ❌ Table ref not found: ${tableId}`)
+          console.error(`[TableAPI] Available refs:`, Object.keys((window as any).__tableRefs || {}))
+          return false
+        }
+
+        console.log(`[TableAPI] 📋 Calling store.loadRows() for ${tableId}`)
+        tableRef.value.store.loadRows(data)
+        console.log(`[TableAPI] ✅ Successfully loaded ${data.length} rows into ${tableId}`)
+        return true
+      },
+
+      /**
+       * Get data from specified table
+       * Returns array of rows (NOT serialized - C# will call JSON.stringify)
+       */
+      getData(tableId: string) {
+        console.log(`[TableAPI] Getting data from ${tableId}`)
+        const tableRef = (window as any).__tableRefs[tableId]
+
+        if (!tableRef || !tableRef.value) {
+          console.error(`[TableAPI] Table ref not found: ${tableId}`)
+          return []
+        }
+
+        // Convert rows Map to array of row objects
+        const rows = tableRef.value.store.rows
+        const result = rows.map((row: any) => {
+          const rowData: any = {
+            __rowId: row.rowId,
+            __rowHeight: row.height
+          }
+
+          row.cells.forEach((cell: any) => {
+            rowData[cell.columnName] = cell.value
+          })
+
+          return rowData
+        })
+
+        console.log(`[TableAPI] ✅ Returning ${result.length} rows from ${tableId}`)
+        return result
+      },
+
+      /**
+       * Update cell in specified table
+       */
+      updateCell(tableId: string, rowId: string, columnName: string, value: any) {
+        console.log(`[TableAPI] Updating cell in ${tableId}: ${rowId}.${columnName} = ${value}`)
+        const tableRef = (window as any).__tableRefs[tableId]
+
+        if (!tableRef || !tableRef.value) {
+          console.error(`[TableAPI] Table ref not found: ${tableId}`)
+          return false
+        }
+
+        tableRef.value.store.updateCell(rowId, columnName, value)
+        console.log(`[TableAPI] ✅ Updated cell in ${tableId}`)
+        return true
+      },
+
+      /**
+       * Delete row from specified table
+       */
+      deleteRow(tableId: string, rowId: string) {
+        console.log(`[TableAPI] Deleting row from ${tableId}: ${rowId}`)
+        const tableRef = (window as any).__tableRefs[tableId]
+
+        if (!tableRef || !tableRef.value) {
+          console.error(`[TableAPI] Table ref not found: ${tableId}`)
+          return false
+        }
+
+        tableRef.value.store.deleteRow(rowId)
+        console.log(`[TableAPI] ✅ Deleted row from ${tableId}`)
+        return true
+      },
+
+      /**
+       * Add validation rule to specified table
+       */
+      addValidationRule(tableId: string, rule: any) {
+        console.log(`[TableAPI] Adding validation rule to ${tableId}:`, rule)
+        const tableRef = (window as any).__tableRefs[tableId]
+
+        if (!tableRef || !tableRef.value || !tableRef.value.validation) {
+          console.error(`[TableAPI] Table ref or validation not found: ${tableId}`)
+          return false
+        }
+
+        tableRef.value.validation.addValidationRule(rule)
+        console.log(`[TableAPI] ✅ Added validation rule to ${tableId}`)
+        return true
+      }
+    }
+
+    console.log('✅ Table refs and API exported to window')
+
+    // ✅ DEBUG: Verify window.__tableAPI and window.__tableRefs
+    console.log('[DEBUG] window.__tableAPI:', {
+      exists: !!window.__tableAPI,
+      type: typeof window.__tableAPI,
+      methods: window.__tableAPI ? Object.keys(window.__tableAPI) : []
+    })
+    console.log('[DEBUG] window.__tableRefs:', {
+      exists: !!window.__tableRefs,
+      type: typeof window.__tableRefs,
+      tables: window.__tableRefs ? Object.keys(window.__tableRefs) : []
+    })
+
+    console.log('[DEBUG] Step 9 COMPLETE')
   } catch (error) {
     const errorDetail = error instanceof Error ? error.message : String(error)
     console.error(`❌ Fatal error in onMounted: ${errorDetail}`)
@@ -148,67 +350,67 @@ onMounted(async () => {
   }
 })
 
-// Funkcia na načítanie sample dát do backendu a zobrazenie v tabuľke 1
+// ✅ UNIVERZÁLNE volanie - načítanie sample dát do tabuľky 1
 async function loadSampleDataToTable1() {
   try {
-    console.log('📥 Loading sample data to backend...')
+    console.log('📥 Loading sample data to table 1 via backend...')
 
-    // Check if window.gridApi is available
-    if (!window.gridApi || typeof window.gridApi.LoadSampleData !== 'function') {
-      console.error('❌ GridAPI not available!')
-      alert('GridAPI not available (LoadSampleData method missing)')
+    if (isLoading.value) {
+      alert('⏳ Počkajte na dokončenie inicializácie')
       return
     }
 
-    // 1. Call backend to generate and store sample data
-    console.log('[loadSampleDataToTable1] Calling LoadSampleData(1000)...')
-    const resultJson = await window.gridApi.LoadSampleData(1000)
-    console.log('[loadSampleDataToTable1] LoadSampleData response received:', resultJson?.substring(0, 100))
+    // ✅ Volá backend ktorý vnútri:
+    // 1. Vygeneruje sample data (GenerateSampleData)
+    // 2. Pošle do tabuľky (LoadDataToTableAsync)
+    const response = await window.gridApi.LoadSampleDataToTable('table1', 1000)
 
-    const result = JSON.parse(resultJson)
-    console.log('[loadSampleDataToTable1] Parsed result:', {
-      success: result.success,
-      rowCount: result.rowCount,
-      hasError: !!result.error
-    })
+    // ✅ FIX: Debug response
+    console.log('📤 Raw response:', response)
+    console.log('📤 Response type:', typeof response)
 
-    if (!result.success) {
-      console.error('❌ LoadSampleData failed:', result.error)
-      alert(`Failed to load sample data: ${result.error}`)
+    // ✅ FIX: Check if response is valid
+    if (!response) {
+      console.error('❌ Response is null or undefined')
+      alert('❌ Chyba: Backend nevrátil žiadnu odpoveď')
       return
     }
 
-    console.log('✅ Sample data loaded to backend:', result.message)
-
-    // 2. ✅ RIEŠENIE #4: Defensive checks before calling loadDataFromBackend
-    if (!table1Ref.value) {
-      console.error('❌ table1Ref is NULL!')
-      console.error('table1Ref.value:', table1Ref.value)
-      alert('Table 1 reference not available - component not mounted?')
+    // ✅ FIX: Parse response (may be string or already object)
+    let result
+    try {
+      result = typeof response === 'string' ? JSON.parse(response) : response
+    } catch (parseError) {
+      console.error('❌ Failed to parse response:', parseError)
+      console.error('❌ Response content:', response)
+      alert(`❌ Chyba pri parsovaní odpovede: ${parseError}`)
       return
     }
 
-    console.log('[loadSampleDataToTable1] table1Ref.value exists:', !!table1Ref.value)
-    console.log('[loadSampleDataToTable1] Available keys on table1Ref.value:', Object.keys(table1Ref.value || {}))
+    console.log('📊 Parsed result:', result)
 
-    if (typeof table1Ref.value.loadDataFromBackend !== 'function') {
-      console.error('❌ loadDataFromBackend() not found on table1Ref!')
-      console.error('table1Ref.value type:', typeof table1Ref.value)
-      console.error('Available methods:', Object.keys(table1Ref.value).filter(k => typeof table1Ref.value[k] === 'function'))
-      alert('loadDataFromBackend method not exposed - rebuild issue?')
-      return
+    // ✅ DEBUG: Log debug info if available
+    if (result?.debug) {
+      console.log('🔍 Debug info:', result.debug)
     }
 
-    console.log('✅ Calling table1Ref.value.loadDataFromBackend()...')
-    await table1Ref.value.loadDataFromBackend()
-    console.log('✅ loadDataFromBackend() completed successfully')
-    console.log('✅ Table 1 refreshed with sample data')
+    if (result && result.success) {
+      console.log(`✅ Backend loaded ${result.rowCount} rows into ${result.tableId}`)
+      alert(`✅ Načítané ${result.rowCount} riadkov do Tabuľky 1`)
+    } else {
+      const errorMsg = result?.error || 'Neznáma chyba'
+      console.error('❌ Backend failed to load data:', errorMsg)
 
-    alert(`Loaded ${result.rowCount || 1000} sample rows into Table 1`)
+      // ✅ Show detailed error with debug info
+      if (result?.debug) {
+        console.error('❌ Error details:', result.debug)
+      }
+
+      alert(`❌ Chyba: ${errorMsg}`)
+    }
   } catch (error) {
     console.error('❌ EXCEPTION in loadSampleDataToTable1:', error)
-    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack')
-    alert(`Error: ${error instanceof Error ? error.message : String(error)}`)
+    alert(`❌ Chyba: ${error}`)
   }
 }
 
@@ -266,6 +468,16 @@ function addValidationRulesToTable1() {
 
   alert('✅ Validation rules pridané pre Tabuľku 1!')
 }
+
+// ✅ RIEŠENIE #4: Unregister ListBoxes on unmount
+onUnmounted(() => {
+  console.log('[App] Unregistering ListBoxes from GridAPI...')
+  gridApi.unregisterListBox('listbox-1')
+  gridApi.unregisterListBox('listbox-2')
+  gridApi.unregisterListBox('listbox-3')
+  gridApi.unregisterListBox('listbox-4')
+  console.log('[App] ✅ All ListBoxes unregistered')
+})
 </script>
 
 <template>
@@ -283,48 +495,57 @@ function addValidationRulesToTable1() {
     <template v-else>
       <!-- Custom toolbar -->
       <div class="custom-toolbar">
-        <button @click="loadSampleDataToTable1">📥 Načítať Sample Dáta do Tabuľky 1</button>
+        <button
+          @click="loadSampleDataToTable1"
+          :disabled="isLoading"
+          :class="{ 'toolbar-button--disabled': isLoading }"
+        >
+          {{ isLoading ? '⏳ Načítava sa...' : '📥 Načítať Sample Dáta do Tabuľky 1' }}
+        </button>
         <button @click="getTableData">📊 Zobraziť dáta z backendu</button>
         <button @click="addValidationRulesToTable1">✓ Pridať Validation Rules</button>
       </div>
 
       <div class="section">
         <h2>Tabuľka 1</h2>
-        <SearchPanel grid-id="table-1" />
-        <FilterRow grid-id="table-1" />
+        <SearchPanel grid-id="table1" />
+        <FilterRow grid-id="table1" />
         <AdvancedTable
           ref="table1Ref"
-          grid-id="table-1"
+          grid-id="table1"
           :columns="table1Columns"
           :config="table1Config"
+          :theme="dataGridTheme"
           :minRows="10"
-          height="300px"
+          height="600px"
           :showHiddenColumnsPanel="true"
         />
       </div>
 
       <div class="section">
         <h2>Tabuľka 2</h2>
-        <SearchPanel grid-id="table-2" />
+        <SearchPanel grid-id="table2" />
         <AdvancedTable
           ref="table2Ref"
-          grid-id="table-2"
+          grid-id="table2"
           :columns="table2Columns"
+          :theme="dataGridTheme"
           :minRows="10"
-          height="300px"
+          height="600px"
           :showHiddenColumnsPanel="true"
         />
       </div>
 
       <div class="section">
         <h2>Tabuľka 3</h2>
-        <FilterRow grid-id="table-3" />
+        <FilterRow grid-id="table3" />
         <AdvancedTable
           ref="table3Ref"
-          grid-id="table-3"
+          grid-id="table3"
           :columns="table3Columns"
+          :theme="dataGridTheme"
           :minRows="10"
-          height="250px"
+          height="600px"
           :showHiddenColumnsPanel="true"
         />
       </div>
@@ -333,10 +554,11 @@ function addValidationRulesToTable1() {
         <h2>Tabuľka 4</h2>
         <AdvancedTable
           ref="table4Ref"
-          grid-id="table-4"
+          grid-id="table4"
           :columns="table4Columns"
+          :theme="dataGridTheme"
           :minRows="10"
-          height="250px"
+          height="600px"
           :showHiddenColumnsPanel="true"
         />
       </div>
@@ -345,33 +567,62 @@ function addValidationRulesToTable1() {
         <h2>Tabuľka 5</h2>
         <AdvancedTable
           ref="table5Ref"
-          grid-id="table-5"
+          grid-id="table5"
           :columns="table5Columns"
+          :theme="dataGridTheme"
           :minRows="10"
-          height="250px"
+          height="600px"
           :showHiddenColumnsPanel="true"
         />
       </div>
 
       <div class="listboxes">
         <div class="listbox-item">
-          <h3>ListBox 1</h3>
-          <ListBox :items="listbox1Items" :multi-select="false" :height="200" :width="250" />
+          <h3>{{ listbox1Config?.title || 'ListBox 1' }}</h3>
+          <ListBox
+            ref="listbox1Ref"
+            :items="listbox1Items"
+            :multi-select="listbox1Config?.multiSelect ?? false"
+            :height="listbox1Config?.height ?? 200"
+            :width="listbox1Config?.width ?? 250"
+            :theme="listBoxTheme"
+          />
         </div>
 
         <div class="listbox-item">
-          <h3>ListBox 2</h3>
-          <ListBox :items="listbox2Items" :multi-select="true" :height="200" :width="250" />
+          <h3>{{ listbox2Config?.title || 'ListBox 2' }}</h3>
+          <ListBox
+            ref="listbox2Ref"
+            :items="listbox2Items"
+            :multi-select="listbox2Config?.multiSelect ?? true"
+            :height="listbox2Config?.height ?? 200"
+            :width="listbox2Config?.width ?? 250"
+            :theme="listBoxTheme"
+          />
         </div>
 
         <div class="listbox-item">
-          <h3>ListBox 3</h3>
-          <ListBox :items="listbox3Items" :multi-select="false" :height="200" :width="250" />
+          <h3>{{ listbox3Config?.title || 'ListBox 3' }}</h3>
+          <ListBox
+            ref="listbox3Ref"
+            :items="listbox3Items"
+            :multi-select="listbox3Config?.multiSelect ?? false"
+            :height="listbox3Config?.height ?? 200"
+            :width="listbox3Config?.width ?? 250"
+            :theme="listBoxTheme"
+          />
         </div>
 
         <div class="listbox-item">
-          <h3>ListBox 4</h3>
-          <ListBox :items="listbox4Items" :multi-select="true" :height="200" :width="250" />
+          <h3>{{ listbox4Config?.title || 'ListBox 4' }}</h3>
+          <ListBox
+            ref="listbox4Ref"
+            :items="listbox4Items"
+            :multi-select="listbox4Config?.multiSelect ?? true"
+            :height="listbox4Config?.height ?? 200"
+            :width="listbox4Config?.width ?? 250"
+            :theme="listBoxTheme"
+          />
         </div>
       </div>
     </template>
@@ -428,5 +679,16 @@ function addValidationRulesToTable1() {
 
 .listbox-item h3 {
   margin-bottom: 10px;
+}
+
+.custom-toolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: #6c757d !important;
+}
+
+.toolbar-button--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

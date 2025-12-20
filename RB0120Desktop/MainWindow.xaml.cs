@@ -2,7 +2,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.Web.WebView2.Core;
 using RB0120Desktop.HostObjects;
-using RB0120Desktop.Services;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -104,7 +103,8 @@ public sealed partial class MainWindow : Window
         var services = new ServiceCollection();
 
         // Register services
-        services.AddSingleton<IUserDataManager, UserDataManager>();
+        // ❌ REMOVED: UserDataManager - replaced with direct JavaScript API calls
+        // services.AddSingleton<IUserDataManager, UserDataManager>();
 
         // Register logging with Serilog
         services.AddLogging(builder =>
@@ -129,10 +129,10 @@ public sealed partial class MainWindow : Window
             webView.CoreWebView2.ProcessFailed += CoreWebView2_ProcessFailed;
             Log("ProcessFailed event handler registered");
 
-            // Create GridApi instance with DI
-            var userDataManager = _serviceProvider.GetRequiredService<IUserDataManager>();
-            _gridApi = new GridApi(userDataManager, userId: "local-user");
-            Log("GridApi instance created");
+            // Create GridApi instance with CoreWebView2 reference
+            var gridApiLogger = _serviceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<GridApi>>();
+            _gridApi = new GridApi(webView.CoreWebView2, logger: gridApiLogger);
+            Log("GridApi instance created with CoreWebView2 reference");
 
             // Setup WebMessage communication (WinUI3 approach)
             webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
@@ -289,44 +289,65 @@ public sealed partial class MainWindow : Window
                             });
                         },
 
-                        GetData: function() {
-                            return this._callMethod('GetData');
+                        // ===== NEW UNIVERSAL TABLE API METHODS =====
+                        LoadSampleDataToTable: function(tableId, rowCount) {
+                            return this._callMethod('LoadSampleDataToTable', JSON.stringify({
+                                tableId: tableId,
+                                rowCount: rowCount || 1000
+                            }));
                         },
 
+                        GetDataFromTable: function(tableId) {
+                            return this._callMethod('GetDataFromTable', JSON.stringify({
+                                tableId: tableId
+                            }));
+                        },
+
+                        UpdateCellInTable: function(tableId, rowId, columnName, value) {
+                            return this._callMethod('UpdateCellInTable', JSON.stringify({
+                                tableId: tableId,
+                                rowId: rowId,
+                                columnName: columnName,
+                                value: value
+                            }));
+                        },
+
+                        DeleteRowFromTable: function(tableId, rowId) {
+                            return this._callMethod('DeleteRowFromTable', JSON.stringify({
+                                tableId: tableId,
+                                rowId: rowId
+                            }));
+                        },
+
+                        // ===== KEPT: Configuration methods =====
                         GetConfig: function() {
                             return this._callMethod('GetConfig');
-                        },
-
-                        GetValidationRules: function() {
-                            return this._callMethod('GetValidationRules');
                         },
 
                         GetColumns: function() {
                             return this._callMethod('GetColumns');
                         },
 
-                        GetCurrentData: function() {
-                            return this._callMethod('GetCurrentData');
-                        },
-
                         HealthCheck: function() {
                             return this._callMethod('HealthCheck');
                         },
 
-                        LoadSampleData: function(rowCount) {
-                            return this._callMethod('LoadSampleData', JSON.stringify({ rowCount: rowCount || 1000 }));
-                        }
+                        // ===== KEPT: ListBox and Theme methods =====
+                        GetListBoxConfig: function(listBoxId) {
+                            return this._callMethod('GetListBoxConfig', JSON.stringify({ listBoxId: listBoxId }));
+                        },
 
-                        // ===== COMMENTED OUT METHODS - Not needed for simplified Desktop→Frontend flow =====
-                        // ImportData: function(jsonData) {
-                        //     return this._callMethod('ImportData', jsonData);
-                        // },
-                        // ExportData: function(options) {
-                        //     return this._callMethod('ExportData', options);
-                        // },
-                        // SetValidationRules: function(jsonRules) {
-                        //     return this._callMethod('SetValidationRules', jsonRules);
-                        // }
+                        GetThemeConfig: function() {
+                            return this._callMethod('GetThemeConfig');
+                        },
+
+                        ClearListBoxSelection: function(listBoxId) {
+                            return this._callMethod('ClearListBoxSelection', JSON.stringify({ listBoxId: listBoxId }));
+                        },
+
+                        GetListBoxSelection: function(listBoxId) {
+                            return this._callMethod('GetListBoxSelection', JSON.stringify({ listBoxId: listBoxId }));
+                        }
                     };
 
                     // Handle responses from C#
@@ -336,7 +357,17 @@ public sealed partial class MainWindow : Window
                             if (response.requestId && window.gridApi._pendingRequests[response.requestId]) {
                                 const { resolve } = window.gridApi._pendingRequests[response.requestId];
                                 delete window.gridApi._pendingRequests[response.requestId];
-                                resolve(response.result);
+
+                                // ✅ FIX: Parse JSON string to object before resolving (fixes double JSON encoding)
+                                try {
+                                    const parsed = typeof response.result === 'string'
+                                        ? JSON.parse(response.result)
+                                        : response.result;
+                                    resolve(parsed);
+                                } catch (parseErr) {
+                                    console.error('[GridAPI] Failed to parse response.result:', parseErr);
+                                    resolve(response.result);  // Fallback to raw result
+                                }
                             }
                         } catch (err) {
                             console.error('[GridAPI] Failed to parse response:', err);
@@ -530,7 +561,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void OnWebMessageReceived(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs args)
+    private async void OnWebMessageReceived(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs args)
     {
         try
         {
@@ -562,39 +593,96 @@ public sealed partial class MainWindow : Window
             string result;
             switch (request.Method)
             {
-                case "GetData":
-                    result = _gridApi!.GetData();
+                // ===== NEW UNIVERSAL TABLE API METHODS =====
+                case "LoadSampleDataToTable":
+                    var loadTableParams = System.Text.Json.JsonSerializer.Deserialize<LoadDataToTableParams>(request.Params ?? "{}");
+                    result = await _gridApi!.LoadSampleDataToTableAsync(
+                        loadTableParams?.TableId ?? "table1",
+                        loadTableParams?.RowCount ?? 1000
+                    );
                     break;
+
+                case "GetDataFromTable":
+                    var getTableParams = System.Text.Json.JsonSerializer.Deserialize<GetDataFromTableParams>(request.Params ?? "{}");
+                    var tableData = await _gridApi!.GetDataFromTableAsync(getTableParams?.TableId ?? "table1");
+                    result = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        success = true,
+                        data = tableData,
+                        rowCount = tableData.Count
+                    });
+                    break;
+
+                case "UpdateCellInTable":
+                    var updateParams = System.Text.Json.JsonSerializer.Deserialize<UpdateCellParams>(request.Params ?? "{}");
+                    if (updateParams != null)
+                    {
+                        result = await _gridApi!.UpdateCellAsync(
+                            updateParams.TableId,
+                            updateParams.RowId,
+                            updateParams.ColumnName,
+                            updateParams.Value
+                        );
+                    }
+                    else
+                    {
+                        result = System.Text.Json.JsonSerializer.Serialize(new { success = false, error = "Invalid parameters" });
+                    }
+                    break;
+
+                case "DeleteRowFromTable":
+                    var deleteParams = System.Text.Json.JsonSerializer.Deserialize<DeleteRowParams>(request.Params ?? "{}");
+                    if (deleteParams != null)
+                    {
+                        result = await _gridApi!.DeleteRowAsync(deleteParams.TableId, deleteParams.RowId);
+                    }
+                    else
+                    {
+                        result = System.Text.Json.JsonSerializer.Serialize(new { success = false, error = "Invalid parameters" });
+                    }
+                    break;
+
+                // ===== KEPT: Configuration methods =====
                 case "GetConfig":
                     result = _gridApi!.GetConfig();
                     break;
-                case "GetValidationRules":
-                    result = _gridApi!.GetValidationRules();
-                    break;
+
                 case "GetColumns":
                     result = _gridApi!.GetColumns();
                     break;
-                // case "GetCurrentData":
-                //     result = _gridApi!.GetCurrentData();
-                //     break;
-                case "LoadSampleData":
-                    var loadParams = System.Text.Json.JsonSerializer.Deserialize<LoadSampleDataParams>(request.Params ?? "{}");
-                    result = _gridApi!.LoadSampleData(loadParams?.RowCount ?? 1000);
-                    break;
+
                 case "HealthCheck":
                     result = _gridApi!.HealthCheck();
                     break;
 
-                // ===== COMMENTED OUT METHODS - Not needed for simplified Desktop→Frontend flow =====
-                // case "ImportData":
-                //     result = _gridApi!.ImportData(request.Params ?? "{}");
-                //     break;
-                // case "ExportData":
-                //     result = _gridApi!.ExportData(request.Params ?? "{}");
-                //     break;
-                // case "SetValidationRules":
-                //     result = _gridApi!.SetValidationRules(request.Params ?? "{}");
-                //     break;
+                // ===== KEPT: ListBox and Theme methods =====
+                case "GetListBoxConfig":
+                    var lbConfigParams = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(request.Params ?? "{}");
+                    var listBoxId = lbConfigParams?.ContainsKey("listBoxId") == true
+                        ? lbConfigParams["listBoxId"]?.ToString() ?? ""
+                        : "";
+                    result = _gridApi!.GetListBoxConfig(listBoxId);
+                    break;
+
+                case "GetThemeConfig":
+                    result = _gridApi!.GetThemeConfig();
+                    break;
+
+                case "ClearListBoxSelection":
+                    var clearParams = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(request.Params ?? "{}");
+                    var clearListBoxId = clearParams?.ContainsKey("listBoxId") == true
+                        ? clearParams["listBoxId"]?.ToString() ?? ""
+                        : "";
+                    result = _gridApi!.ClearListBoxSelection(clearListBoxId);
+                    break;
+
+                case "GetListBoxSelection":
+                    var getParams = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(request.Params ?? "{}");
+                    var getListBoxId = getParams?.ContainsKey("listBoxId") == true
+                        ? getParams["listBoxId"]?.ToString() ?? ""
+                        : "";
+                    result = _gridApi!.GetListBoxSelection(getListBoxId);
+                    break;
 
                 default:
                     result = System.Text.Json.JsonSerializer.Serialize(new
@@ -649,9 +737,30 @@ public sealed partial class MainWindow : Window
         public string? Result { get; set; }
     }
 
-    private class LoadSampleDataParams
+    // ===== NEW DTO CLASSES for Universal Table API =====
+    private class LoadDataToTableParams
     {
+        public string TableId { get; set; } = "table1";
         public int RowCount { get; set; } = 1000;
+    }
+
+    private class GetDataFromTableParams
+    {
+        public string TableId { get; set; } = "table1";
+    }
+
+    private class UpdateCellParams
+    {
+        public string TableId { get; set; } = "";
+        public string RowId { get; set; } = "";
+        public string ColumnName { get; set; } = "";
+        public object? Value { get; set; }
+    }
+
+    private class DeleteRowParams
+    {
+        public string TableId { get; set; } = "";
+        public string RowId { get; set; } = "";
     }
 
     private void CoreWebView2_ProcessFailed(object sender, CoreWebView2ProcessFailedEventArgs e)

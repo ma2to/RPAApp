@@ -1,9 +1,85 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using RB0120Desktop.Models;
-using RB0120Desktop.Services;
+using Microsoft.Extensions.Logging;
+using Microsoft.Web.WebView2.Core;
 
 namespace RB0120Desktop.HostObjects;
+
+/// <summary>
+/// ListBox item data structure
+/// </summary>
+public class ListBoxItemData
+{
+    public string Value { get; set; } = "";
+    public string Label { get; set; } = "";
+    public string? Category { get; set; }
+    public string? Icon { get; set; }
+    public bool? Disabled { get; set; }
+}
+
+/// <summary>
+/// ListBox configuration data structure
+/// Táto štruktúra sa POSIELA do funkcie GetListBoxConfig
+/// </summary>
+public class ListBoxConfigData
+{
+    public string Title { get; set; } = "";
+    public List<ListBoxItemData> Items { get; set; } = new();
+    public bool MultiSelect { get; set; } = false;
+    public int Height { get; set; } = 200;
+    public int Width { get; set; } = 250;
+    public string? Placeholder { get; set; }
+    public bool ShowResetButton { get; set; } = true;
+}
+
+/// <summary>
+/// Theme configuration for DataGrid
+/// </summary>
+public class DataGridTheme
+{
+    public string HeaderBackground { get; set; } = "#2c3e50";
+    public string HeaderColor { get; set; } = "#ffffff";
+    public string HeaderBorderColor { get; set; } = "#34495e";
+    public string RowBackground { get; set; } = "#ffffff";
+    public string RowAlternateBackground { get; set; } = "#f8f9fa";
+    public string RowHoverBackground { get; set; } = "#e3f2fd";
+    public string RowSelectedBackground { get; set; } = "#bbdefb";
+    public string RowBorderColor { get; set; } = "#dee2e6";
+    public string TextColor { get; set; } = "#212529";
+    public string TextColorSecondary { get; set; } = "#6c757d";
+    public string ErrorBackground { get; set; } = "#ffebee";
+    public string ErrorColor { get; set; } = "#c62828";
+    public string WarningBackground { get; set; } = "#fff3e0";
+    public string WarningColor { get; set; } = "#ef6c00";
+}
+
+/// <summary>
+/// Theme configuration for ListBox
+/// </summary>
+public class ListBoxTheme
+{
+    public string Background { get; set; } = "#ffffff";
+    public string BorderColor { get; set; } = "#ced4da";
+    public string ItemBackground { get; set; } = "#ffffff";
+    public string ItemHoverBackground { get; set; } = "#f8f9fa";
+    public string ItemSelectedBackground { get; set; } = "#007bff";
+    public string ItemSelectedColor { get; set; } = "#ffffff";
+    public string ItemColor { get; set; } = "#212529";
+    public string ResetButtonBackground { get; set; } = "#6c757d";
+    public string ResetButtonHoverBackground { get; set; } = "#5a6268";
+    public string ResetButtonColor { get; set; } = "#ffffff";
+}
+
+/// <summary>
+/// Complete theme configuration data structure
+/// Táto štruktúra sa POSIELA do funkcie GetThemeConfig
+/// </summary>
+public class ThemeConfigData
+{
+    public DataGridTheme DataGrid { get; set; } = new();
+    public ListBoxTheme ListBox { get; set; } = new();
+}
 
 /// <summary>
 /// WebView2 Host Object for Grid API
@@ -11,73 +87,20 @@ namespace RB0120Desktop.HostObjects;
 /// </summary>
 [ClassInterface(ClassInterfaceType.AutoDual)]
 [ComVisible(true)]
-public class GridApi
+public partial class GridApi
 {
-    private readonly IUserDataManager _userDataManager;
-    private readonly string _userId;
+    private readonly CoreWebView2 _webView;
+    private readonly ILogger<GridApi> _logger;
 
-    public GridApi(IUserDataManager userDataManager, string userId = "local-user")
+    public GridApi(CoreWebView2 webView, ILogger<GridApi>? logger = null)
     {
-        _userDataManager = userDataManager;
-        _userId = userId;
+        _webView = webView;
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<GridApi>.Instance;
     }
 
-    /// <summary>
-    /// Get all grid data for current user
-    /// Returns JSON string
-    /// </summary>
-    public string GetData()
-    {
-        try
-        {
-            var data = _userDataManager.GetDataAsync(_userId).GetAwaiter().GetResult();
-
-            var response = new
-            {
-                success = true,
-                data = data,
-                rowCount = data.Count
-            };
-
-            return JsonSerializer.Serialize(response);
-        }
-        catch (Exception ex)
-        {
-            return JsonSerializer.Serialize(new
-            {
-                success = false,
-                error = ex.Message
-            });
-        }
-    }
-
-    /// <summary>
-    /// Generate and load sample data into UserDataManager
-    /// Called from frontend button click
-    /// </summary>
-    public string LoadSampleData(int rowCount = 1000)
-    {
-        try
-        {
-            var data = GenerateSampleData(rowCount);
-            _userDataManager.SetDataAsync(_userId, data).GetAwaiter().GetResult();
-
-            return JsonSerializer.Serialize(new
-            {
-                success = true,
-                rowCount = data.Count,
-                message = $"Successfully loaded {data.Count} sample rows"
-            });
-        }
-        catch (Exception ex)
-        {
-            return JsonSerializer.Serialize(new
-            {
-                success = false,
-                error = ex.Message
-            });
-        }
-    }
+    // ===== REMOVED: Old UserDataManager methods replaced with universal JavaScript API calls =====
+    // - GetData() → Use GetDataFromTableAsync(tableId)
+    // - LoadSampleData() → Use LoadSampleDataToTableAsync(tableId, rowCount)
 
     /// <summary>
     /// Generate sample data for testing
@@ -109,7 +132,7 @@ public class GridApi
             var row = new GridRow
             {
                 RowId = Guid.NewGuid().ToString(),
-                RowHeight = 25.0,
+                RowHeight = 35.0,
                 Checkbox = random.Next(10) > 7, // 30% checked
                 Data = new Dictionary<string, object?>
                 {
@@ -136,107 +159,9 @@ public class GridApi
         return rows;
     }
 
-    /// <summary>
-    /// Import data (replaces existing data)
-    /// </summary>
-    /// <param name="jsonData">JSON string containing grid rows</param>
-    public string ImportData(string jsonData)
-    {
-        try
-        {
-            var request = JsonSerializer.Deserialize<ImportRequest>(jsonData);
-            if (request == null || request.Data == null)
-            {
-                throw new ArgumentException("Invalid import data");
-            }
-
-            _userDataManager.SetDataAsync(_userId, request.Data).GetAwaiter().GetResult();
-
-            return JsonSerializer.Serialize(new
-            {
-                success = true,
-                rowCount = request.Data.Count,
-                message = $"Successfully imported {request.Data.Count} rows"
-            });
-        }
-        catch (Exception ex)
-        {
-            return JsonSerializer.Serialize(new
-            {
-                success = false,
-                error = ex.Message
-            });
-        }
-    }
-
-    /// <summary>
-    /// Export grid data
-    /// </summary>
-    /// <param name="options">JSON string with export options (onlyFiltered, filteredRowIds, columnNames)</param>
-    public string ExportData(string options = "{}")
-    {
-        try
-        {
-            var exportOptions = JsonSerializer.Deserialize<ExportOptions>(options) ?? new ExportOptions();
-            var data = _userDataManager.GetDataAsync(_userId).GetAwaiter().GetResult();
-
-            // Apply row filters
-            if (exportOptions.OnlyFiltered && exportOptions.FilteredRowIds != null && exportOptions.FilteredRowIds.Count > 0)
-            {
-                var rowIdSet = new HashSet<string>(exportOptions.FilteredRowIds);
-                data = data.Where(r => rowIdSet.Contains(r.RowId)).ToList();
-            }
-
-            // Apply column filters
-            if (exportOptions.ColumnNames != null && exportOptions.ColumnNames.Count > 0)
-            {
-                var columnSet = new HashSet<string>(exportOptions.ColumnNames);
-                var filteredData = new List<GridRow>();
-
-                foreach (var row in data)
-                {
-                    var filteredRow = new GridRow
-                    {
-                        RowId = row.RowId,
-                        RowHeight = row.RowHeight,
-                        Checkbox = columnSet.Contains("Checkbox") ? row.Checkbox : null,
-                        Data = new Dictionary<string, object?>()
-                    };
-
-                    // Filter Data dictionary by column names
-                    if (row.Data != null)
-                    {
-                        foreach (var kvp in row.Data)
-                        {
-                            if (columnSet.Contains(kvp.Key))
-                            {
-                                filteredRow.Data[kvp.Key] = kvp.Value;
-                            }
-                        }
-                    }
-
-                    filteredData.Add(filteredRow);
-                }
-
-                data = filteredData;
-            }
-
-            return JsonSerializer.Serialize(new
-            {
-                success = true,
-                data = data,
-                rowCount = data.Count
-            });
-        }
-        catch (Exception ex)
-        {
-            return JsonSerializer.Serialize(new
-            {
-                success = false,
-                error = ex.Message
-            });
-        }
-    }
+    // ===== REMOVED: Import/Export methods (replaced with direct table API) =====
+    // - ImportData() → Use LoadDataToTableAsync(tableId, data)
+    // - ExportData() → Use GetDataFromTableAsync(tableId)
 
     /// <summary>
     /// Get grid configuration
@@ -255,7 +180,7 @@ public class GridApi
                 ShowRowNumber = true,
                 ShowCheckbox = true,
                 ShowValidationAlerts = true,
-                MinRowHeight = 25.0,
+                MinRowHeight = 35.0,
                 MaxRowHeight = 200.0
             };
 
@@ -275,106 +200,10 @@ public class GridApi
         }
     }
 
-    /// <summary>
-    /// Set validation rules for columns
-    /// </summary>
-    public string SetValidationRules(string jsonRules)
-    {
-        try
-        {
-            var request = JsonSerializer.Deserialize<ValidationRulesRequest>(jsonRules);
-            if (request == null || request.Rules == null)
-            {
-                throw new ArgumentException("Invalid validation rules");
-            }
-
-            _userDataManager.SetValidationRulesAsync(_userId, request.Rules).GetAwaiter().GetResult();
-
-            return JsonSerializer.Serialize(new
-            {
-                success = true,
-                ruleCount = request.Rules.Count,
-                message = $"Successfully set {request.Rules.Count} validation rules"
-            });
-        }
-        catch (Exception ex)
-        {
-            return JsonSerializer.Serialize(new
-            {
-                success = false,
-                error = ex.Message
-            });
-        }
-    }
-
-    /// <summary>
-    /// Get validation rules for current user
-    /// </summary>
-    public string GetValidationRules()
-    {
-        try
-        {
-            var rules = _userDataManager.GetValidationRulesAsync(_userId).GetAwaiter().GetResult();
-
-            return JsonSerializer.Serialize(new
-            {
-                success = true,
-                data = rules
-            });
-        }
-        catch (Exception ex)
-        {
-            return JsonSerializer.Serialize(new
-            {
-                success = false,
-                error = ex.Message
-            });
-        }
-    }
-
-    /// <summary>
-    /// Get all column names (data columns + checkbox special column)
-    /// </summary>
-    public string GetColumnNames()
-    {
-        try
-        {
-            var data = _userDataManager.GetDataAsync(_userId).GetAwaiter().GetResult();
-            var columnNames = new HashSet<string>();
-
-            // Extract all unique column names from Data dictionaries
-            foreach (var row in data)
-            {
-                if (row.Data != null)
-                {
-                    foreach (var key in row.Data.Keys)
-                    {
-                        columnNames.Add(key);
-                    }
-                }
-            }
-
-            // Add Checkbox special column if it exists in any row
-            if (data.Any(r => r.Checkbox.HasValue))
-            {
-                columnNames.Add("Checkbox");
-            }
-
-            return JsonSerializer.Serialize(new
-            {
-                success = true,
-                columnNames = columnNames.OrderBy(c => c).ToList()
-            });
-        }
-        catch (Exception ex)
-        {
-            return JsonSerializer.Serialize(new
-            {
-                success = false,
-                error = ex.Message
-            });
-        }
-    }
+    // ===== REMOVED: Validation and column methods (replaced with direct table API) =====
+    // - SetValidationRules() → Use AddValidationRuleAsync(tableId, rule)
+    // - GetValidationRules() → Managed in frontend store
+    // - GetColumnNames() → Use GetColumns() for column definitions
 
     /// <summary>
     /// Get column definitions for grid
@@ -402,7 +231,7 @@ public class GridApi
                 new { name = "phone", header = "Phone", width = 150, minWidth = 120, maxWidth = 200, isVisible = true, isReadOnly = false, isSortable = true, isFilterable = true },
 
                 // Only sort enabled, rest defaults
-                new { name = "company", header = "Company", width = 200, isVisible = true, isReadOnly = false, isSortable = true },
+                new { name = "company", header = "Company", width = 200, isVisible = true, isReadOnly = false, isSortable = true ,visibleForGrid=false},
 
                 // Only filter enabled, rest defaults
                 new { name = "position", header = "Position", width = 150, isVisible = true, isReadOnly = false, isFilterable = true },
@@ -440,6 +269,304 @@ public class GridApi
         }
     }
 
+    // ===== NEW UNIVERSAL METHODS - Call JavaScript API directly via ExecuteScriptAsync =====
+
+    /// <summary>
+    /// ✅ WRAPPER METHOD: Generate sample data and load into ANY table
+    /// This is temporary for testing - later will be removed
+    ///
+    /// USAGE:
+    ///   await LoadSampleDataToTableAsync("table1", 1000);
+    /// </summary>
+    public async Task<string> LoadSampleDataToTableAsync(string tableId, int rowCount)
+    {
+        try
+        {
+            _logger.LogInformation($"[GridApi] LoadSampleDataToTableAsync: {tableId}, rowCount: {rowCount}");
+
+            // 1. Generate sample data (temporary - for testing)
+            var data = GenerateSampleData(rowCount);
+
+            // 2. Load into table using universal method
+            return await LoadDataToTableAsync(tableId, data);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[GridApi] LoadSampleDataToTableAsync exception: {ex.Message}");
+            return JsonSerializer.Serialize(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// ✅ UNIVERSAL METHOD: Load data into ANY table via JavaScript API
+    ///
+    /// USAGE:
+    ///   var data = GetDataFromSomewhere();
+    ///   await LoadDataToTableAsync("table1", data);
+    ///   await LoadDataToTableAsync("table2", data);
+    /// </summary>
+    public async Task<string> LoadDataToTableAsync(string tableId, List<GridRow> data)
+    {
+        try
+        {
+            _logger.LogInformation($"[GridApi] LoadDataToTableAsync: {tableId}, rowCount: {data.Count}");
+
+            // ✅ RIEŠENIE: Transform GridRow objects to flat structure expected by frontend
+            var flattenedData = data.Select(row => {
+                // Create flat object with all properties at root level
+                var flatObj = new Dictionary<string, object?>();
+
+                // Add special properties with __ prefix (frontend expects this)
+                flatObj["__rowId"] = row.RowId;
+                flatObj["__rowHeight"] = row.RowHeight ?? 40.0;
+
+                // Flatten Data dictionary to root level
+                foreach (var kvp in row.Data)
+                {
+                    flatObj[kvp.Key] = kvp.Value;
+                }
+
+                return flatObj;
+            }).ToList();
+
+            // Serialize flattened data to JSON
+            var jsonData = JsonSerializer.Serialize(flattenedData, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            });
+
+            // ✅ FIX: Escape JSON string for safe embedding in JavaScript
+            var escapedJsonData = jsonData
+                .Replace("\\", "\\\\")   // Escape backslashes first
+                .Replace("\"", "\\\"")   // Escape quotes
+                .Replace("\n", "\\n")    // Escape newlines
+                .Replace("\r", "\\r");   // Escape carriage returns
+
+            // Call JavaScript API to load data into table
+            var script = $@"
+                (function() {{
+                    try {{
+                        // ✅ CRITICAL: Check if window.__tableAPI exists
+                        if (typeof window.__tableAPI === 'undefined') {{
+                            return JSON.stringify({{
+                                success: false,
+                                error: 'window.__tableAPI is undefined - frontend not initialized yet',
+                                debug: {{
+                                    hasTableAPI: false,
+                                    hasTableRefs: typeof window.__tableRefs !== 'undefined',
+                                    timestamp: new Date().toISOString()
+                                }}
+                            }});
+                        }}
+
+                        // ✅ CRITICAL: Check if window.__tableRefs exists
+                        if (typeof window.__tableRefs === 'undefined') {{
+                            return JSON.stringify({{
+                                success: false,
+                                error: 'window.__tableRefs is undefined',
+                                debug: {{
+                                    hasTableAPI: true,
+                                    hasTableRefs: false,
+                                    timestamp: new Date().toISOString()
+                                }}
+                            }});
+                        }}
+
+                        // ✅ CRITICAL: Check if specific table ref exists
+                        if (!window.__tableRefs['{tableId}']) {{
+                            const availableTables = Object.keys(window.__tableRefs);
+                            return JSON.stringify({{
+                                success: false,
+                                error: 'Table ref not found: {tableId}',
+                                debug: {{
+                                    requestedTable: '{tableId}',
+                                    availableTables: availableTables,
+                                    tableCount: availableTables.length,
+                                    timestamp: new Date().toISOString()
+                                }}
+                            }});
+                        }}
+
+                        // ✅ Parse JSON data safely
+                        const jsonString = ""{escapedJsonData}"";
+                        const data = JSON.parse(jsonString);
+
+                        // ✅ Call loadData and capture result
+                        const result = window.__tableAPI.loadData('{tableId}', data);
+
+                        return JSON.stringify({{
+                            success: result,
+                            rowCount: {data.Count},
+                            tableId: '{tableId}',
+                            debug: {{
+                                dataLength: data.length,
+                                loadDataResult: result,
+                                timestamp: new Date().toISOString()
+                            }}
+                        }});
+                    }} catch (err) {{
+                        return JSON.stringify({{
+                            success: false,
+                            error: 'Exception: ' + err.message,
+                            debug: {{
+                                errorName: err.name,
+                                errorMessage: err.message,
+                                errorStack: err.stack || 'no stack',
+                                timestamp: new Date().toISOString()
+                            }}
+                        }});
+                    }}
+                }})()
+            ";
+
+            var resultJson = await _webView.ExecuteScriptAsync(script);
+
+            _logger.LogInformation($"[GridApi] ✅ LoadDataToTableAsync result: {resultJson}");
+            return resultJson;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[GridApi] LoadDataToTableAsync exception: {ex.Message}");
+            _logger.LogError($"[GridApi] Stack trace: {ex.StackTrace}");
+            return JsonSerializer.Serialize(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// ✅ UNIVERSAL METHOD: Get data from ANY table via JavaScript API
+    ///
+    /// USAGE:
+    ///   var dataFromTable1 = await GetDataFromTableAsync("table1");
+    ///   // Process data in C#
+    ///   foreach (var row in dataFromTable1) { ... }
+    ///   // Send to another table
+    ///   await LoadDataToTableAsync("table3", dataFromTable1);
+    /// </summary>
+    public async Task<List<GridRow>> GetDataFromTableAsync(string tableId)
+    {
+        try
+        {
+            _logger.LogInformation($"[GridApi] GetDataFromTableAsync: {tableId}");
+
+            // Call JavaScript API to get data from table
+            var script = $@"
+                (function() {{
+                    try {{
+                        if (!window.__tableAPI) {{
+                            return JSON.stringify([]);
+                        }}
+
+                        const data = window.__tableAPI.getData('{tableId}');
+                        return JSON.stringify(data);
+                    }} catch (err) {{
+                        console.error('[GridApi] GetDataFromTableAsync error:', err);
+                        return JSON.stringify([]);
+                    }}
+                }})()
+            ";
+
+            var resultJson = await _webView.ExecuteScriptAsync(script);
+
+            // Remove extra quotes that ExecuteScriptAsync adds
+            if (resultJson.StartsWith("\"") && resultJson.EndsWith("\""))
+            {
+                resultJson = resultJson.Substring(1, resultJson.Length - 2);
+                resultJson = resultJson.Replace("\\\"", "\"");
+            }
+
+            var data = JsonSerializer.Deserialize<List<GridRow>>(resultJson, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            }) ?? new List<GridRow>();
+
+            _logger.LogInformation($"[GridApi] ✅ GetDataFromTableAsync received {data.Count} rows from {tableId}");
+            return data;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[GridApi] GetDataFromTableAsync exception: {ex.Message}");
+            return new List<GridRow>();
+        }
+    }
+
+    /// <summary>
+    /// ✅ UNIVERSAL METHOD: Update cell in ANY table via JavaScript API
+    ///
+    /// USAGE:
+    ///   await UpdateCellAsync("table1", rowId, "name", "New Name");
+    /// </summary>
+    public async Task<string> UpdateCellAsync(string tableId, string rowId, string columnName, object value)
+    {
+        try
+        {
+            _logger.LogInformation($"[GridApi] UpdateCellAsync: {tableId}.{rowId}.{columnName}");
+
+            var jsonValue = JsonSerializer.Serialize(value);
+
+            var script = $@"
+                (function() {{
+                    try {{
+                        if (!window.__tableAPI) {{
+                            return JSON.stringify({{ success: false, error: 'TableAPI not initialized' }});
+                        }}
+
+                        const result = window.__tableAPI.updateCell('{tableId}', '{rowId}', '{columnName}', {jsonValue});
+                        return JSON.stringify({{ success: result, tableId: '{tableId}' }});
+                    }} catch (err) {{
+                        return JSON.stringify({{ success: false, error: err.message }});
+                    }}
+                }})()
+            ";
+
+            var resultJson = await _webView.ExecuteScriptAsync(script);
+            _logger.LogInformation($"[GridApi] ✅ UpdateCellAsync result: {resultJson}");
+            return resultJson;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[GridApi] UpdateCellAsync exception: {ex.Message}");
+            return JsonSerializer.Serialize(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// ✅ UNIVERSAL METHOD: Delete row from ANY table via JavaScript API
+    ///
+    /// USAGE:
+    ///   await DeleteRowAsync("table1", rowId);
+    /// </summary>
+    public async Task<string> DeleteRowAsync(string tableId, string rowId)
+    {
+        try
+        {
+            _logger.LogInformation($"[GridApi] DeleteRowAsync: {tableId}.{rowId}");
+
+            var script = $@"
+                (function() {{
+                    try {{
+                        if (!window.__tableAPI) {{
+                            return JSON.stringify({{ success: false, error: 'TableAPI not initialized' }});
+                        }}
+
+                        const result = window.__tableAPI.deleteRow('{tableId}', '{rowId}');
+                        return JSON.stringify({{ success: result, tableId: '{tableId}' }});
+                    }} catch (err) {{
+                        return JSON.stringify({{ success: false, error: err.message }});
+                    }}
+                }})()
+            ";
+
+            var resultJson = await _webView.ExecuteScriptAsync(script);
+            _logger.LogInformation($"[GridApi] ✅ DeleteRowAsync result: {resultJson}");
+            return resultJson;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[GridApi] DeleteRowAsync exception: {ex.Message}");
+            return JsonSerializer.Serialize(new { success = false, error = ex.Message });
+        }
+    }
+
     /// <summary>
     /// Health check
     /// </summary>
@@ -451,6 +578,412 @@ public class GridApi
             status = "healthy",
             timestamp = DateTime.UtcNow
         });
+    }
+
+    // ===== RIEŠENIE #4: HLAVNÉ FUNKCIE - PRIJÍMAJÚ DÁTA, NEPOZNAJÚ ZDROJ =====
+
+    /// <summary>
+    /// Získa konfiguráciu ListBoxu - HLAVNÁ FUNKCIA
+    ///
+    /// DÔLEŽITÉ: Táto funkcia PRIJÍMA dáta ako parameter!
+    /// - NEPOZNÁ odkiaľ dáta prišli (JSON, DB, IO, ...)
+    /// - Len ich VALIDUJE a SFORMÁTUJE do API response
+    /// - NIKDY SA NEMENÍ pri zmene zdroja dát
+    ///
+    /// Volajúci kód je zodpovedný za:
+    /// - Načítanie dát zo zdroja (JSON/DB/IO)
+    /// - Prípravu dát do ListBoxConfigData štruktúry
+    /// - Zavolanie tejto funkcie s pripraveými dátami
+    /// </summary>
+    /// <param name="listBoxId">ID listboxu (pre logovanie)</param>
+    /// <param name="configData">Pripravené konfiguračné dáta</param>
+    /// <returns>JSON string s API response</returns>
+    public string GetListBoxConfig(string listBoxId, ListBoxConfigData configData)
+    {
+        try
+        {
+            _logger.LogInformation($"[GridApi] GetListBoxConfig called for: {listBoxId}");
+
+            // ===== VALIDÁCIA VSTUPNÝCH DÁT =====
+            if (configData == null)
+            {
+                _logger.LogError($"[GridApi] configData is null for: {listBoxId}");
+                return JsonSerializer.Serialize(new
+                {
+                    success = false,
+                    error = "Configuration data is null"
+                });
+            }
+
+            if (string.IsNullOrEmpty(configData.Title))
+            {
+                _logger.LogWarning($"[GridApi] Title is empty for: {listBoxId}, using default");
+                configData.Title = $"ListBox {listBoxId}";
+            }
+
+            if (configData.Items == null)
+            {
+                _logger.LogWarning($"[GridApi] Items is null for: {listBoxId}, using empty list");
+                configData.Items = new List<ListBoxItemData>();
+            }
+
+            // Validuj rozmery
+            if (configData.Height < 50) configData.Height = 50;
+            if (configData.Height > 1000) configData.Height = 1000;
+            if (configData.Width < 100) configData.Width = 100;
+            if (configData.Width > 800) configData.Width = 800;
+
+            // ===== FORMÁTOVANIE DO API RESPONSE =====
+            var response = new
+            {
+                success = true,
+                data = new
+                {
+                    title = configData.Title,
+                    items = configData.Items,
+                    multiSelect = configData.MultiSelect,
+                    height = configData.Height,
+                    width = configData.Width,
+                    placeholder = configData.Placeholder ?? "Vyberte možnosť...",
+                    showResetButton = configData.ShowResetButton
+                }
+            };
+
+            var jsonResponse = JsonSerializer.Serialize(response, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            });
+
+            _logger.LogInformation($"[GridApi] GetListBoxConfig response prepared for '{listBoxId}': {configData.Items.Count} items");
+            return jsonResponse;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[GridApi] GetListBoxConfig error: {ex.Message}");
+            return JsonSerializer.Serialize(new
+            {
+                success = false,
+                error = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Získa konfiguráciu themes - HLAVNÁ FUNKCIA
+    ///
+    /// DÔLEŽITÉ: Táto funkcia PRIJÍMA dáta ako parameter!
+    /// - NEPOZNÁ odkiaľ dáta prišli (JSON, DB, IO, ...)
+    /// - Len ich VALIDUJE a SFORMÁTUJE do API response
+    /// - NIKDY SA NEMENÍ pri zmene zdroja dát
+    ///
+    /// Volajúci kód je zodpovedný za:
+    /// - Načítanie dát zo zdroja (JSON/DB/IO)
+    /// - Prípravu dát do ThemeConfigData štruktúry
+    /// - Zavolanie tejto funkcie s pripraveými dátami
+    /// </summary>
+    /// <param name="themeData">Pripravené theme dáta</param>
+    /// <returns>JSON string s API response</returns>
+    public string GetThemeConfig(ThemeConfigData themeData)
+    {
+        try
+        {
+            _logger.LogInformation("[GridApi] GetThemeConfig called with provided data");
+
+            // ===== VALIDÁCIA VSTUPNÝCH DÁT =====
+            if (themeData == null)
+            {
+                _logger.LogError("[GridApi] themeData is null");
+                return JsonSerializer.Serialize(new
+                {
+                    success = false,
+                    error = "Theme configuration data is null"
+                });
+            }
+
+            if (themeData.DataGrid == null)
+            {
+                _logger.LogWarning("[GridApi] DataGrid theme is null, using default");
+                themeData.DataGrid = new DataGridTheme();
+            }
+
+            if (themeData.ListBox == null)
+            {
+                _logger.LogWarning("[GridApi] ListBox theme is null, using default");
+                themeData.ListBox = new ListBoxTheme();
+            }
+
+            // ===== FORMÁTOVANIE DO API RESPONSE =====
+            var response = new
+            {
+                success = true,
+                data = new
+                {
+                    dataGrid = themeData.DataGrid,
+                    listBox = themeData.ListBox
+                }
+            };
+
+            var jsonResponse = JsonSerializer.Serialize(response, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            });
+
+            _logger.LogInformation("[GridApi] GetThemeConfig response prepared");
+            return jsonResponse;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[GridApi] GetThemeConfig error: {ex.Message}");
+            return JsonSerializer.Serialize(new
+            {
+                success = false,
+                error = ex.Message
+            });
+        }
+    }
+
+    // ===== OVERLOAD METÓDY - volajú hlavné funkcie s dátami načítanými z JSON =====
+
+    /// <summary>
+    /// OVERLOAD: GetListBoxConfig bez explicit data parameter
+    /// Načíta dáta z JSON a zavolá hlavnú funkciu
+    ///
+    /// KEĎ PREJDEŠ NA DATABÁZU:
+    /// - Zmeň len túto metódu (načítaj z DB namiesto JSON)
+    /// - Hlavná funkcia GetListBoxConfig(listBoxId, configData) ZOSTÁVA ROVNAKÁ!
+    /// </summary>
+    public string GetListBoxConfig(string listBoxId)
+    {
+        try
+        {
+            _logger.LogInformation($"[GridApi] GetListBoxConfig (auto-load from JSON) called for: {listBoxId}");
+
+            // ===== NAČÍTANIE DÁT Z JSON =====
+            var configData = LoadListBoxConfigFromJson(listBoxId);
+
+            // Ak sa nepodarilo načítať, použi default
+            if (configData == null)
+            {
+                _logger.LogWarning($"[GridApi] Failed to load config for '{listBoxId}', using default");
+                configData = CreateDefaultListBoxConfig(listBoxId);
+            }
+
+            // ===== ZAVOLAJ HLAVNÚ FUNKCIU S DÁTAMI =====
+            return GetListBoxConfig(listBoxId, configData);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[GridApi] GetListBoxConfig (auto-load) error: {ex.Message}");
+            return JsonSerializer.Serialize(new
+            {
+                success = false,
+                error = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// OVERLOAD: GetThemeConfig bez explicit data parameter
+    /// Načíta dáta z JSON a zavolá hlavnú funkciu
+    ///
+    /// KEĎ PREJDEŠ NA DATABÁZU:
+    /// - Zmeň len túto metódu (načítaj z DB namiesto JSON)
+    /// - Hlavná funkcia GetThemeConfig(themeData) ZOSTÁVA ROVNAKÁ!
+    /// </summary>
+    public string GetThemeConfig()
+    {
+        try
+        {
+            _logger.LogInformation("[GridApi] GetThemeConfig (auto-load from JSON) called");
+
+            // ===== NAČÍTANIE DÁT Z JSON =====
+            var themeData = LoadThemeConfigFromJson();
+
+            // Ak sa nepodarilo načítať, použi default
+            if (themeData == null)
+            {
+                _logger.LogWarning("[GridApi] Failed to load theme config, using default");
+                themeData = CreateDefaultThemeConfig();
+            }
+
+            // ===== ZAVOLAJ HLAVNÚ FUNKCIU S DÁTAMI =====
+            return GetThemeConfig(themeData);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[GridApi] GetThemeConfig (auto-load) error: {ex.Message}");
+            return JsonSerializer.Serialize(new
+            {
+                success = false,
+                error = ex.Message
+            });
+        }
+    }
+
+    // ===== HELPER FUNKCIE - načítanie dát zo zdrojov =====
+    // TIETO funkcie SA MENIA keď zmeníš zdroj (JSON → DB → IO)
+    // Hlavné funkcie vyššie SA NEMENIA!
+
+    /// <summary>
+    /// Helper: Načíta ListBox config z JSON súboru
+    ///
+    /// KEĎ PREJDEŠ NA DATABÁZU:
+    /// - Nahraď túto metódu s LoadListBoxConfigFromDatabase()
+    /// - Alebo vytvor LoadListBoxConfigFromDatabase() a volaj tú namiesto tejto
+    /// </summary>
+    private ListBoxConfigData? LoadListBoxConfigFromJson(string listBoxId)
+    {
+        try
+        {
+            var configPath = Path.Combine(AppContext.BaseDirectory, "config");
+            var filePath = Path.Combine(configPath, $"{listBoxId}.json");
+
+            if (!File.Exists(filePath))
+            {
+                _logger.LogWarning($"[GridApi] Config file not found: {filePath}");
+                return null;
+            }
+
+            _logger.LogInformation($"[GridApi] Loading config from: {filePath}");
+
+            var jsonContent = File.ReadAllText(filePath);
+            var config = JsonSerializer.Deserialize<ListBoxConfigData>(jsonContent, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (config == null)
+            {
+                _logger.LogError($"[GridApi] Failed to deserialize: {filePath}");
+                return null;
+            }
+
+            _logger.LogInformation($"[GridApi] Loaded config for '{listBoxId}': {config.Items.Count} items");
+            return config;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[GridApi] Error loading from JSON: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Helper: Načíta Theme config z JSON súboru
+    /// </summary>
+    private ThemeConfigData? LoadThemeConfigFromJson()
+    {
+        try
+        {
+            var configPath = Path.Combine(AppContext.BaseDirectory, "config");
+            var filePath = Path.Combine(configPath, "theme.json");
+
+            if (!File.Exists(filePath))
+            {
+                _logger.LogWarning($"[GridApi] Theme config file not found: {filePath}");
+                return null;
+            }
+
+            _logger.LogInformation($"[GridApi] Loading theme from: {filePath}");
+
+            var jsonContent = File.ReadAllText(filePath);
+            var config = JsonSerializer.Deserialize<ThemeConfigData>(jsonContent, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (config == null)
+            {
+                _logger.LogError($"[GridApi] Failed to deserialize theme config");
+                return null;
+            }
+
+            _logger.LogInformation("[GridApi] Theme config loaded successfully");
+            return config;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[GridApi] Error loading theme from JSON: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Helper: Vytvorí default ListBox config
+    /// </summary>
+    private ListBoxConfigData CreateDefaultListBoxConfig(string listBoxId)
+    {
+        return new ListBoxConfigData
+        {
+            Title = $"ListBox {listBoxId}",
+            MultiSelect = false,
+            Height = 200,
+            Width = 250,
+            Placeholder = "Vyberte možnosť...",
+            ShowResetButton = true,
+            Items = new List<ListBoxItemData>
+            {
+                new() { Value = "default1", Label = "Default možnosť 1" },
+                new() { Value = "default2", Label = "Default možnosť 2" }
+            }
+        };
+    }
+
+    /// <summary>
+    /// Helper: Vytvorí default Theme config
+    /// </summary>
+    private ThemeConfigData CreateDefaultThemeConfig()
+    {
+        return new ThemeConfigData
+        {
+            DataGrid = new DataGridTheme(),
+            ListBox = new ListBoxTheme()
+        };
+    }
+
+    // ===== CLIENT-SIDE METHODS =====
+
+    /// <summary>
+    /// Vyčistí výber v ListBoxe (frontend managed)
+    /// </summary>
+    public string ClearListBoxSelection(string listBoxId)
+    {
+        try
+        {
+            _logger.LogInformation($"[GridApi] ClearListBoxSelection called for: {listBoxId}");
+            return JsonSerializer.Serialize(new
+            {
+                success = true,
+                message = $"Selection cleared for {listBoxId}"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[GridApi] ClearListBoxSelection error: {ex.Message}");
+            return JsonSerializer.Serialize(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Získa výber v ListBoxe (frontend managed)
+    /// </summary>
+    public string GetListBoxSelection(string listBoxId)
+    {
+        try
+        {
+            _logger.LogInformation($"[GridApi] GetListBoxSelection called for: {listBoxId}");
+            return JsonSerializer.Serialize(new
+            {
+                success = true,
+                data = Array.Empty<string>(),
+                message = "Selection managed on frontend"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[GridApi] GetListBoxSelection error: {ex.Message}");
+            return JsonSerializer.Serialize(new { success = false, error = ex.Message });
+        }
     }
 }
 

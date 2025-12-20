@@ -7,15 +7,16 @@
       "Bash(dotnet clean:*)",
       "WebSearch",
       "Bash(xargs:*)",
-      "Bash(ls -la \"D:\\www\\RB0120APP\\NewRpaWinUiComponentsPackage\\RpaAdvancedTable\\frontend\\src\\composables\"\" 2>/dev/null || dir \"D:wwwRB0120APPNewRpaWinUiComponentsPackageRpaAdvancedTablefrontendsrccomposables \")",
-      "Bash(ls -la \"D:\\www\\RB0120APP\\NewRpaWinUiComponentsPackage\\RpaAdvancedTable\\frontend\\src\\components\"\" 2>/dev/null || dir \"D:wwwRB0120APPNewRpaWinUiComponentsPackageRpaAdvancedTablefrontendsrccomponents \")",
       "Bash(findstr:*)",
       "Bash(ls:*)",
       "Bash(npm install)",
       "Bash(npx vite:*)",
       "Bash(powershell -Command:*)",
       "Bash(npm run build:lib:*)",
-      "Bash(dir node_modulesvue-virtual-scroller)"
+      "Bash(dir node_modulesvue-virtual-scroller)",
+      "Bash(grep:*)",
+      "Bash(dir \"D:\\www\\RB0120APP\\RPAApp\\RPAApp\\rpa-web-ui\\dist\")",
+      "Bash(npm install:*)"
     ]
   }
 }

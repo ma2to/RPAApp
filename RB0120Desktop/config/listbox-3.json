@@ -1,0 +1,18 @@
+{
+  "title": "Stavy",
+  "multiSelect": false,
+  "height": 180,
+  "width": 220,
+  "items": [
+    {
+      "value": "active",
+      "label": "Aktívny",
+      "icon": "✓"
+    },
+    {
+      "value": "inactive",
+      "label": "Neaktívny",
+      "icon": "✗"
+    }
+  ]
+}

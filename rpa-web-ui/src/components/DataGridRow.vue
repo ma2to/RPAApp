@@ -111,10 +111,11 @@ function handleInsertBelow(rowId: string, count: number) {
 <style scoped>
 .grid-row {
   display: grid; /* Changed from flex to grid for perfect column alignment */
+  grid-auto-rows: 100%; /* ✅ Grid tracks fill 100% of row height */
   /* grid-template-columns applied via inline style from parent */
   border-bottom: 1px solid #e0e0e0;
-  width: 100%; /* CRITICAL: Always fill container width */
-  max-width: 100%; /* CRITICAL: Never exceed container width */
+  width: auto; /* ✅ FIX: Allow row to grow based on minWidth for horizontal scroll */
+  /* REMOVED: max-width: 100% - was preventing horizontal scroll from working correctly */
   /* REMOVED min-width: fit-content - this was causing each row to calculate 1fr differently! */
   /* All rows MUST have identical width for 1fr to resolve to same pixels */
 }

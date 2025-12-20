@@ -20,7 +20,7 @@ export interface RowHeightResult {
 }
 
 export const defaultAutoRowHeightConfig: AutoRowHeightConfig = {
-  minHeight: 32, // 32px default row height (matches default in store)
+  minHeight: 35, // ✅ RIEŠENIE #2B: 35px default row height (32 + 3, matches default in store)
   maxHeight: 400, // Default fallback (will be overridden by 70% of container height)
   fontFamily: 'system-ui, -apple-system, sans-serif',
   fontSize: 14,  // MUST match CSS font-size in .grid-cell

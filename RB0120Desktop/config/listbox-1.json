@@ -1,0 +1,25 @@
+{
+  "title": "Kategórie",
+  "multiSelect": false,
+  "height": 200,
+  "width": 250,
+  "placeholder": "Vyber kategóriu...",
+  "showResetButton": true,
+  "items": [
+    {
+      "value": "cat1",
+      "label": "Kategória A",
+      "category": "Hlavné"
+    },
+    {
+      "value": "cat2",
+      "label": "Kategória B",
+      "category": "Hlavné"
+    },
+    {
+      "value": "cat3",
+      "label": "Kategória C",
+      "category": "Vedľajšie"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "title": "Priority",
+  "multiSelect": true,
+  "height": 200,
+  "width": 250,
+  "items": [
+    {
+      "value": "high",
+      "label": "Vysoká priorita"
+    },
+    {
+      "value": "medium",
+      "label": "Stredná priorita"
+    },
+    {
+      "value": "low",
+      "label": "Nízka priorita"
+    }
+  ]
+}

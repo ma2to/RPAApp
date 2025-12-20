@@ -40,9 +40,9 @@ export default defineConfig({
           '@vueuse/core': 'VueUse',
           '@imengyu/vue3-context-menu': 'ContextMenu'
         },
-        // Preserve CSS
+        // Preserve CSS - always output as style.css for package.json exports
         assetFileNames: (assetInfo) => {
-          if (assetInfo.name === 'style.css') return 'style.css'
+          if (assetInfo.name?.endsWith('.css')) return 'style.css'
           return assetInfo.name || 'asset'
         }
       }

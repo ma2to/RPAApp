@@ -1,7 +1,6 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
-import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import ContextMenu from '@imengyu/vue3-context-menu'
 import '@imengyu/vue3-context-menu/lib/vue3-context-menu.css'
 import { setupGlobalErrorHandlers, vueErrorHandler, useLogger } from '@/composables/useLogger'

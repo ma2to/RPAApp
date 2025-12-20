@@ -4,6 +4,13 @@
  * Supports both HTTP mode (development) and WebView2 Host Objects mode (production)
  */
 
+// ✅ RIEŠENIE #6C: ListBox ref type for API integration
+export interface ListBoxRef {
+  clearSelection: () => void
+  getSelectedValues: () => string[]
+  selectValue: (value: string) => void
+}
+
 // Extend Window interface for WebView2 gridApi
 declare global {
   interface Window {
@@ -16,6 +23,12 @@ declare global {
       GetValidationRules(): Promise<string>
       GetColumnNames(): Promise<string>
       HealthCheck(): Promise<string>
+      // ✅ RIEŠENIE #6C: ListBox API methods
+      ClearListBoxSelection(listBoxId: string): Promise<string>
+      GetListBoxSelection(listBoxId: string): Promise<string>
+      // ✅ RIEŠENIE #7: New API methods
+      GetListBoxConfig(listBoxId: string): Promise<string>
+      GetThemeConfig(): Promise<string>
     }
   }
 }
@@ -57,6 +70,8 @@ export interface ApiResponse<T> {
 
 class GridApiService {
   private isHostMode = false
+  // ✅ RIEŠENIE #6C: Registry for listbox references
+  private listBoxRegistry = new Map<string, ListBoxRef>()
 
   constructor() {
     // Detect if running in WebView2 with Host Objects
@@ -83,8 +98,11 @@ class GridApiService {
       const hostApi = window.gridApi
       const resultJson = await (hostApi as any)[method](...args)
 
-      // Parse JSON response from C#
-      const result = JSON.parse(resultJson)
+      // ✅ FIX: Support both string and object responses (after double JSON encoding fix in MainWindow.xaml.cs)
+      // Parse JSON response from C# - handle both string (old behavior) and object (new behavior after fix)
+      const result = typeof resultJson === 'string'
+        ? JSON.parse(resultJson)
+        : resultJson
       return result as ApiResponse<T>
     } catch (error) {
       console.error('Grid API call failed:', error)
@@ -258,6 +276,96 @@ class GridApiService {
       }
     } catch {
       return false
+    }
+  }
+
+  // ✅ RIEŠENIE #6C: ListBox API methods
+
+  /**
+   * Register a listbox component for API access
+   * @param listBoxId Unique identifier for the listbox
+   * @param listBoxRef Reference to the listbox component instance
+   */
+  registerListBox(listBoxId: string, listBoxRef: ListBoxRef): void {
+    this.listBoxRegistry.set(listBoxId, listBoxRef)
+    console.log(`[GridAPI] ListBox registered: ${listBoxId}`)
+  }
+
+  /**
+   * Unregister a listbox component
+   * @param listBoxId Unique identifier for the listbox
+   */
+  unregisterListBox(listBoxId: string): void {
+    this.listBoxRegistry.delete(listBoxId)
+    console.log(`[GridAPI] ListBox unregistered: ${listBoxId}`)
+  }
+
+  /**
+   * Clear listbox selection (can be called from desktop app)
+   * @param listBoxId Unique identifier for the listbox
+   */
+  clearListBoxSelection(listBoxId: string): ApiResponse<void> {
+    const listBoxRef = this.listBoxRegistry.get(listBoxId)
+    if (listBoxRef) {
+      listBoxRef.clearSelection()
+      console.log(`[GridAPI] ListBox selection cleared: ${listBoxId}`)
+      return {
+        success: true,
+        message: `ListBox '${listBoxId}' selection cleared`
+      }
+    } else {
+      console.warn(`[GridAPI] ListBox not found: ${listBoxId}`)
+      return {
+        success: false,
+        error: `ListBox not found: ${listBoxId}`
+      }
+    }
+  }
+
+  /**
+   * Get listbox current selection (can be called from desktop app)
+   * @param listBoxId Unique identifier for the listbox
+   */
+  getListBoxSelection(listBoxId: string): ApiResponse<string[]> {
+    const listBoxRef = this.listBoxRegistry.get(listBoxId)
+    if (listBoxRef) {
+      const selectedValues = listBoxRef.getSelectedValues()
+      console.log(`[GridAPI] ListBox selection retrieved: ${listBoxId}`, selectedValues)
+      return {
+        success: true,
+        data: selectedValues
+      }
+    } else {
+      console.warn(`[GridAPI] ListBox not found: ${listBoxId}`)
+      return {
+        success: false,
+        error: `ListBox not found: ${listBoxId}`
+      }
+    }
+  }
+
+  // ✅ RIEŠENIE #7: New API methods
+
+  /**
+   * Get listbox configuration from backend (items, settings)
+   * @param listBoxId Unique identifier for the listbox
+   */
+  async getListBoxConfig(listBoxId: string): Promise<ApiResponse<any>> {
+    if (this.isHostMode) {
+      return this.callHostApi<any>('GetListBoxConfig', listBoxId)
+    } else {
+      return this.request<any>(`/listbox/${listBoxId}/config`)
+    }
+  }
+
+  /**
+   * Get theme configuration from backend (colors, styles)
+   */
+  async getThemeConfig(): Promise<ApiResponse<any>> {
+    if (this.isHostMode) {
+      return this.callHostApi<any>('GetThemeConfig')
+    } else {
+      return this.request<any>('/theme/config')
     }
   }
 }

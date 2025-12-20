@@ -1,0 +1,25 @@
+{
+  "title": "Možnosti (Multi-select)",
+  "multiSelect": true,
+  "height": 250,
+  "width": 300,
+  "placeholder": "Vyber viacero...",
+  "showResetButton": true,
+  "items": [
+    {
+      "value": "opt1",
+      "label": "Možnosť 1",
+      "category": "Skupina A"
+    },
+    {
+      "value": "opt2",
+      "label": "Možnosť 2",
+      "category": "Skupina A"
+    },
+    {
+      "value": "opt3",
+      "label": "Možnosť 3",
+      "category": "Skupina B"
+    }
+  ]
+}

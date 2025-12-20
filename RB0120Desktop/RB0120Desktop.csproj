@@ -18,9 +18,9 @@
 
     <!-- Application properties -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Platforms>x86;x64;ARM64</Platforms>
-    <RuntimeIdentifier Condition="'$(Platform)' == 'x86'">win-x86</RuntimeIdentifier>
+    <Platforms>x64;x86;ARM64</Platforms>
     <RuntimeIdentifier Condition="'$(Platform)' == 'x64'">win-x64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'x86'">win-x86</RuntimeIdentifier>
     <RuntimeIdentifier Condition="'$(Platform)' == 'ARM64'">win-arm64</RuntimeIdentifier>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
   </PropertyGroup>
@@ -40,22 +40,62 @@
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- Copy Vue3 build (wwwroot/) to output -->
-    <Content Include="wwwroot\**\*" Condition="Exists('wwwroot')">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>wwwroot\%(RecursiveDir)%(FileName)%(Extension)</Link>
-    </Content>
-  </ItemGroup>
+  <!-- Clean wwwroot before copying frontend -->
+  <Target Name="CleanWwwroot" BeforeTargets="CopyFrontend">
+    <Message Text="=== Cleaning wwwroot ===" Importance="high" />
+    <RemoveDir Directories="wwwroot" Condition="Exists('wwwroot')" />
+    <MakeDir Directories="wwwroot" />
+  </Target>
 
-  <!-- Build frontend automatically before building desktop app -->
-  <Target Name="BuildFrontend" BeforeTargets="BeforeBuild">
-    <Message Text="=== Building Vue Frontend ===" Importance="high" />
+  <!-- Copy frontend dist to wwwroot automatically before building desktop app -->
+  <Target Name="CopyFrontend" BeforeTargets="BeforeBuild" DependsOnTargets="CleanWwwroot">
+    <Message Text="=== Copying Vue Frontend from frontend/dist to wwwroot ===" Importance="high" />
 
-    <Exec Command="npm install" WorkingDirectory="frontend" ContinueOnError="false" />
-    <Exec Command="npm run build" WorkingDirectory="frontend" ContinueOnError="false" />
+    <!-- Copy frontend/dist to wwwroot (build frontend manually: cd frontend && npm run build) -->
+    <ItemGroup>
+      <DistFiles Include="frontend\dist\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DistFiles)"
+          DestinationFolder="wwwroot\%(RecursiveDir)" />
 
-    <Message Text="=== Frontend build completed ===" Importance="high" />
+    <Message Text="=== Frontend copied to wwwroot ===" Importance="high" />
+  </Target>
+
+  <!-- ✅ PROFESSIONAL FIX: Copy wwwroot to output AFTER build completes -->
+  <!-- This ensures fresh files are always copied, regardless of bundle name changes -->
+  <Target Name="CopyWwwrootToOutput" AfterTargets="Build">
+    <Message Text="=== Copying wwwroot to output directory ===" Importance="high" />
+
+    <!-- Clean output wwwroot first -->
+    <RemoveDir Directories="$(OutDir)wwwroot" Condition="Exists('$(OutDir)wwwroot')" />
+
+    <!-- Copy all files from wwwroot to output -->
+    <ItemGroup>
+      <WwwrootFiles Include="wwwroot\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WwwrootFiles)"
+          DestinationFolder="$(OutDir)wwwroot\%(RecursiveDir)"
+          SkipUnchangedFiles="false" />
+
+    <Message Text="=== Wwwroot copied to output successfully ===" Importance="high" />
+  </Target>
+
+  <!-- Copy config files to output directory -->
+  <Target Name="CopyConfigToOutput" AfterTargets="Build">
+    <Message Text="=== Copying config files to output directory ===" Importance="high" />
+
+    <!-- Create config directory in output if it doesn't exist -->
+    <MakeDir Directories="$(OutDir)config" Condition="!Exists('$(OutDir)config')" />
+
+    <!-- Copy all config JSON files -->
+    <ItemGroup>
+      <ConfigFiles Include="config\*.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ConfigFiles)"
+          DestinationFolder="$(OutDir)config"
+          SkipUnchangedFiles="false" />
+
+    <Message Text="=== Config files copied to output successfully ===" Importance="high" />
   </Target>
 
 </Project>

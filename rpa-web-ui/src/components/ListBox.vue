@@ -1,6 +1,18 @@
 <template>
   <div class="listbox-container">
-    <div v-if="title" class="listbox-title">{{ title }}</div>
+    <!-- ✅ RIEŠENIE #6A: Header with title and reset button -->
+    <div v-if="title || showResetButton" class="listbox-header">
+      <div v-if="title" class="listbox-title">{{ title }}</div>
+      <button
+        v-if="showResetButton"
+        class="listbox-reset-btn"
+        @click="handleReset"
+        :disabled="selectedValues.size === 0"
+        title="Clear selection"
+      >
+        ✖
+      </button>
+    </div>
     <div
       class="listbox"
       :class="{ 'listbox--multi': multiSelect }"
@@ -49,12 +61,14 @@ const props = withDefaults(defineProps<{
   height?: number
   width?: number
   theme?: Partial<ListBoxTheme>  // Optional theme customization
+  showResetButton?: boolean  // ✅ RIEŠENIE #6A: Show reset button (default: true)
 }>(), {
   title: '',
   multiSelect: false,
   preSelected: () => [],
   height: 200,
-  width: 250
+  width: 250,
+  showResetButton: true  // ✅ RIEŠENIE #6A: Default to showing reset button
 })
 
 const emit = defineEmits<{
@@ -93,6 +107,7 @@ function isSelected(value: string): boolean {
   return selectedValues.value.has(value)
 }
 
+// ✅ RIEŠENIE #5: Listbox deselect on click for single-select
 function handleItemClick(item: ListBoxItem) {
   if (props.multiSelect) {
     // Multi-select: toggle selection
@@ -102,16 +117,30 @@ function handleItemClick(item: ListBoxItem) {
       selectedValues.value.add(item.value)
     }
   } else {
-    // Single-select: clear previous and select this one
-    selectedValues.value.clear()
-    selectedValues.value.add(item.value)
+    // ✅ RIEŠENIE #5: Single-select with deselect support
+    // Toggle if clicking same item, otherwise select new item
+    if (selectedValues.value.has(item.value)) {
+      // Clicked on already selected item → deselect
+      selectedValues.value.delete(item.value)
+    } else {
+      // Clicked on different item → select it
+      selectedValues.value.clear()
+      selectedValues.value.add(item.value)
+    }
   }
 
   // Emit selection change
   emit('selectionChange', Array.from(selectedValues.value))
 }
 
+// ✅ RIEŠENIE #6B: Reset handler
+function handleReset() {
+  selectedValues.value.clear()
+  emit('selectionChange', [])
+}
+
 // Expose selected values for programmatic access
+// ✅ RIEŠENIE #6B: clearSelection already exposed, can be called from API
 defineExpose({
   getSelectedValues: () => Array.from(selectedValues.value),
   clearSelection: () => {
@@ -137,11 +166,52 @@ defineExpose({
   gap: 8px;
 }
 
+/* ✅ RIEŠENIE #6A: Header with title and reset button */
+.listbox-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 4px;
+}
+
 .listbox-title {
   font-weight: 600;
   font-size: 14px;
   color: var(--lb-title-fg, #212529);
-  padding-bottom: 4px;
+  flex: 1;
+}
+
+/* ✅ RIEŠENIE #6A: Reset button styles */
+.listbox-reset-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--lb-container-border, #ced4da);
+  border-radius: 4px;
+  background-color: var(--lb-container-bg, white);
+  color: var(--lb-item-fg, #212529);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s ease;
+}
+
+.listbox-reset-btn:hover:not(:disabled) {
+  background-color: var(--lb-item-hover-bg, #f8f9fa);
+  border-color: var(--lb-container-focused-border, #0d6efd);
+  color: var(--lb-container-focused-border, #0d6efd);
+}
+
+.listbox-reset-btn:active:not(:disabled) {
+  background-color: var(--lb-item-selected-bg, #e3f2fd);
+}
+
+.listbox-reset-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .listbox {

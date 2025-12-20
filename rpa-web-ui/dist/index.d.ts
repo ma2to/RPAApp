@@ -25,6 +25,8 @@ declare type __VLS_Props = {
     autoRowHeightEnabled?: boolean;
     minRows?: number;
     showHiddenColumnsPanel?: boolean;
+    enableHideColumn?: boolean;
+    enableAutoFit?: boolean;
 };
 
 declare type __VLS_Props_2 = {
@@ -35,6 +37,7 @@ declare type __VLS_Props_2 = {
     height?: number;
     width?: number;
     theme?: Partial<ListBoxTheme>;
+    showResetButton?: boolean;
 };
 
 declare type __VLS_Props_3 = {
@@ -168,8 +171,15 @@ declare const _default: DefineComponent<__VLS_Props, {
     handleCopy: () => Promise<void>;
     handlePaste: () => Promise<void>;
     handleCut: () => Promise<void>;
-}, {}, {}, {}, ComponentOptionsMixin, ComponentOptionsMixin, {}, string, PublicProps, Readonly<__VLS_Props> & Readonly<{}>, {}, {}, {}, {}, string, ComponentProvideOptions, false, {
-    scrollerRef: any;
+    isGridReady: Ref<boolean, boolean>;
+    store: any;
+    getColumns: () => any;
+    setColumns: (columns: GridColumn[]) => void;
+}, {}, {}, {}, ComponentOptionsMixin, ComponentOptionsMixin, {}, string, PublicProps, Readonly<__VLS_Props> & Readonly<{}>, {
+    enableHideColumn: boolean;
+    enableAutoFit: boolean;
+}, {}, {}, {}, string, ComponentProvideOptions, false, {
+    scrollerRef: HTMLDivElement;
 }, HTMLDivElement>;
 export { _default as AdvancedTable }
 export { _default as DataGrid }
@@ -264,6 +274,7 @@ export declare const ListBox: DefineComponent<__VLS_Props_2, {
     title: string;
     multiSelect: boolean;
     preSelected: string[];
+    showResetButton: boolean;
 }, {}, {}, {}, string, ComponentProvideOptions, false, {}, HTMLDivElement>;
 
 export declare interface ListBoxItem {

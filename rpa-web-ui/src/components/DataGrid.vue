@@ -49,40 +49,11 @@
           📏 Auto Height {{ store.isAutoRowHeightEnabled ? 'ON' : 'OFF' }}
         </button>
       </div>
-
-      <!-- Backend API sync -->
-      <div class="toolbar-section">
-        <button
-          class="toolbar-button"
-          :class="{ 'toolbar-button--disabled': !isBackendConnected }"
-          :disabled="isLoadingFromBackend || !isBackendConnected"
-          @click="loadDataFromBackend"
-          title="Load data from backend"
-        >
-          {{ isLoadingFromBackend ? '⏳ Loading...' : '⬇️ Load from Backend' }}
-        </button>
-        <button
-          class="toolbar-button"
-          :class="{ 'toolbar-button--disabled': !isBackendConnected }"
-          :disabled="isSavingToBackend || !isBackendConnected"
-          @click="saveDataToBackend"
-          title="Save data to backend"
-        >
-          {{ isSavingToBackend ? '⏳ Saving...' : '⬆️ Save to Backend' }}
-        </button>
-        <span
-          class="connection-status"
-          :class="{ 'connection-status--connected': isBackendConnected, 'connection-status--disconnected': !isBackendConnected }"
-          @click="checkBackendConnection"
-          title="Click to refresh connection status"
-        >
-          {{ isBackendConnected ? '🟢 Connected' : '🔴 Disconnected' }}
-        </span>
-      </div>
     </div>
 
     <!-- Hidden columns notification -->
-    <div v-if="showHiddenColumnsPanel !== false && hiddenColumns.length > 0" class="hidden-columns-panel">
+    <!-- ✅ RIEŠENIE: Kontroluj enableHideColumn - panel sa zobrazí LEN ak je povolené skrývanie -->
+    <div v-if="enableHideColumn !== false && hiddenColumns.length > 0" class="hidden-columns-panel">
       <span class="hidden-columns-label">Hidden columns:</span>
       <button
         v-for="col in hiddenColumns"
@@ -99,37 +70,30 @@
     </div>
 
     <div class="grid-container">
-      <DataGridHeader
-        :columns="allColumns"
-        :grid-template-columns="gridTemplateColumns"
-        :grid-id="instanceId"
-        :is-grid-ready="isGridReady"
-        :is-processing="isProcessing"
-        :show-hidden-columns-panel="showHiddenColumnsPanel"
-        @sort="handleSort"
-        @resize="handleResize"
-        @hide-column="handleHideColumn"
-        @auto-fit-column="handleAutoFitColumn"
-        @show-filter="handleShowFilter"
-      />
+      <!-- ✅ Wrapper for horizontal scroll -->
+      <div class="table-content">
+        <!-- ✅ RIEŠENIE A: Wrapper pre column grouping - header + rows scrollujú spoločne -->
+        <div class="table-inner" :style="{ minWidth: minTableWidth ? `${minTableWidth}px` : undefined }">
+          <DataGridHeader
+            :columns="allColumns"
+            :grid-template-columns="gridTemplateColumns"
+            :grid-id="instanceId"
+            :is-grid-ready="isGridReady"
+            :is-processing="isProcessing"
+            :show-hidden-columns-panel="showHiddenColumnsPanel"
+            :enable-hide-column="enableHideColumn"
+            :enable-auto-fit="enableAutoFit"
+            @sort="handleSort"
+            @resize="handleResize"
+            @hideColumn="handleHideColumn"
+            @autoFitColumn="handleAutoFitColumn"
+            @show-filter="handleShowFilter"
+          />
 
-      <DynamicScroller
-        ref="scrollerRef"
-        :items="visibleRows"
-        :min-item-size="40"
-        :buffer="200"
-        key-field="rowId"
-        class="scroller"
-      >
-        <!-- @ts-ignore - DynamicScroller slot types -->
-        <template #default="{ item, index, active }">
-          <DynamicScrollerItem
-            :item="item"
-            :active="active"
-            :size-dependencies="[item.height, item.cells.length, item.validationErrorCount]"
-            :data-index="index"
-          >
-            <DataGridRow
+          <div ref="scrollerRef" class="scroller">
+            <LazyRow
+              v-for="item in visibleRows"
+              :key="item.rowId"
               :row="item"
               :columns="allColumns"
               :grid-template-columns="gridTemplateColumns"
@@ -142,9 +106,9 @@
               @insert-above="handleInsertAbove"
               @insert-below="handleInsertBelow"
             />
-          </DynamicScrollerItem>
-        </template>
-      </DynamicScroller>
+          </div>
+        </div>
+      </div>
     </div>
 
     <PaginationControl
@@ -174,7 +138,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, onBeforeMount, onBeforeUnmount, provide, nextTick } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
-import { DynamicScroller, DynamicScrollerItem } from 'vue-virtual-scroller'
 import { useDataGridStore, type GridColumn, type GridRow, type GridCell } from '@/stores/dataGridStore'
 import { useValidation } from '@/composables/useValidation'
 import { useCopyPaste } from '@/composables/useCopyPaste'
@@ -188,11 +151,12 @@ import type { DataGridTheme } from '@/types/theme'
 import { useFiltering, type FilterExpression, type SimpleFilter, type CompositeFilter } from '@/composables/useFiltering'
 import DataGridHeader from './DataGridHeader.vue'
 import DataGridRow from './DataGridRow.vue'
+import LazyRow from './LazyRow.vue'
 import PaginationControl from './PaginationControl.vue'
 import FilterFlyout from './FilterFlyout.vue'
 import type { FilterValue } from './FilterFlyout.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   config?: any
   columns?: GridColumn[]
   gridId?: string  // Optional unique ID for this grid instance
@@ -203,7 +167,12 @@ const props = defineProps<{
   autoRowHeightEnabled?: boolean  // Optional: Enable AutoRowHeight on initialization (default: false)
   minRows?: number  // Optional: Minimum number of rows to display (default: 5)
   showHiddenColumnsPanel?: boolean  // Optional: Show hidden columns panel (default: true)
-}>()
+  enableHideColumn?: boolean   // ✅ NOVÝ PROP #1 - zapne/vypne Hide v menu + panel
+  enableAutoFit?: boolean       // ✅ NOVÝ PROP #2 - zapne/vypne AutoFit v menu
+}>(), {
+  enableHideColumn: true,  // ✅ DEFAULT: zapnuté
+  enableAutoFit: true       // ✅ DEFAULT: zapnuté
+})
 
 // Generate unique store ID for this grid instance
 const instanceId = props.gridId || `grid-${Math.random().toString(36).substr(2, 9)}`
@@ -248,6 +217,27 @@ if (props.minRows !== undefined) {
 // Create validation instance for this DataGrid and provide it to child components
 const validation = useValidation()
 provide('validation', validation)
+
+// ✅ RIEŠENIE #1: Create observer refs BEFORE providing them (fix ReferenceError)
+// ✅ RIEŠENIE C: Shared IntersectionObserver for lazy row rendering
+// ✅ KAŽDÁ DataGrid inštancia vytvorí SVOJ VLASTNÝ observer
+// ✅ Observer je scoped na túto inštanciu cez provide()
+// ✅ Iné DataGrid inštancie majú SVOJE observery (úplne oddelené)
+const rowVisibility = ref(new Map<string, boolean>())
+const sharedObserver = ref<IntersectionObserver | null>(null)
+
+// ✅ RIEŠENIE #2: Wrap provide() in try-catch for better error logging
+try {
+  // ✅ Provide shared observer to child components (scoped to THIS DataGrid instance)
+  // ✅ LazyRow children will inject THESE values (not from other DataGrid instances)
+  provide('intersectionObserver', sharedObserver)
+  provide('rowVisibility', rowVisibility)
+  logger.debug('✅ Observer refs created and provided successfully')
+} catch (error) {
+  logger.error('❌ Failed to initialize observer:', error)
+  console.error('[DataGrid] Setup error:', error)
+  throw error  // Re-throw to show in Vue error handler
+}
 
 // Create copy/paste instance
 const copyPaste = useCopyPaste()
@@ -318,12 +308,7 @@ const measureContainerHeight = () => {
     return
   }
 
-  if (!scrollerRef.value.$el) {
-    console.log('[AutoRowHeight] Cannot measure: scrollerRef.$el is undefined')
-    return
-  }
-
-  const height = scrollerRef.value.$el.clientHeight
+  const height = scrollerRef.value.clientHeight
   if (height > 0) {
     containerHeight.value = height
     console.log(`[AutoRowHeight] Container height measured: ${height}px`)
@@ -385,21 +370,254 @@ onMounted(async () => {
     logger.debug(`⏭️ Skipping AutoRowHeight: enabled=${store.isAutoRowHeightEnabled}, rowCount=${store.rows.length}`)
   }
 
-  // 7. Register resize listener
+  // 7. Create shared IntersectionObserver for lazy row rendering
+  // ✅ FIX: Create AFTER nextTick so scrollerRef.value is available
+  // ✅ FIX: Use scrollerRef.value as root (not viewport) for proper horizontal scroll detection
+  await nextTick()  // Ensure scrollerRef is populated
+
+  if (!scrollerRef.value) {
+    logger.error('❌ scrollerRef not available for IntersectionObserver!')
+  } else {
+    sharedObserver.value = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const rowId = (entry.target as HTMLElement).dataset.rowId
+          if (rowId) {
+            // ✅ Updates rowVisibility for THIS DataGrid instance only
+            rowVisibility.value.set(rowId, entry.isIntersecting)
+          }
+        })
+      },
+      {
+        root: scrollerRef.value,  // ✅ FIX: Watch .scroller container, not viewport
+        rootMargin: '100px',  // Preload 100px before visible
+        threshold: 0
+      }
+    )
+    logger.info('👁️ IntersectionObserver created with root: .scroller for instance:', instanceId)
+  }
+
+  // 8. Register resize listener
   window.addEventListener('resize', measureContainerHeight)
   logger.debug('🎯 Resize listener registered')
 
-  // 8. ONLY NOW mark grid as ready (after ALL async operations complete)
+  // 9. ✅ FIX: Wheel handler ON .scroller for vertical scroll
+  // ✅ NO horizontal scroll sync needed - header and rows both in .table-content scroll context
+  if (scrollerRef.value) {
+    // Wheel handler for vertical scroll boundary control
+    const handleWheel = (event: WheelEvent) => {
+      if (!scrollerRef.value) return
+
+      const isVerticalScroll = Math.abs(event.deltaY) > Math.abs(event.deltaX)
+
+      if (isVerticalScroll) {
+        const maxScroll = scrollerRef.value.scrollHeight - scrollerRef.value.clientHeight
+        const currentScroll = scrollerRef.value.scrollTop
+
+        // Only prevent default AT boundaries to avoid page scroll
+        if ((event.deltaY < 0 && currentScroll <= 0) ||
+            (event.deltaY > 0 && currentScroll >= maxScroll)) {
+          event.preventDefault()
+        }
+        // Within bounds - browser handles scroll naturally
+      }
+    }
+
+    // ✅ FIX: Register on SCROLLER, not tableContent
+    scrollerRef.value.addEventListener('wheel', handleWheel, { passive: false })
+    logger.debug('🎯 Wheel event handler registered on .scroller')
+
+    // Cleanup v onBeforeUnmount
+    ;(window as any).__dataGridScrollCleanup = (window as any).__dataGridScrollCleanup || []
+    ;(window as any).__dataGridScrollCleanup.push(() => {
+      scrollerRef.value?.removeEventListener('wheel', handleWheel)
+    })
+  }
+
+  // 10. ONLY NOW mark grid as ready (after ALL async operations complete)
   await nextTick()
   isGridReady.value = true
   logger.info('========== ✅ Grid marked as READY for user interaction ==========')
+
+  // 🔍 RIEŠENIE B: DIAGNOSTIC LOGS - Column grouping debug
+  await nextTick()
+  const tableContent = document.querySelector('.table-content') as HTMLElement | null
+  const tableInner = document.querySelector('.table-inner') as HTMLElement | null
+  const headerEl = document.querySelector('.grid-header') as HTMLElement | null
+  const scrollerEl = scrollerRef.value
+  const firstRow = document.querySelector('.grid-row') as HTMLElement | null
+
+  console.group('🔍 HORIZONTAL SCROLL DIAGNOSTIC')
+
+  console.log('📊 .table-content:', {
+    offsetWidth: tableContent?.offsetWidth,
+    scrollWidth: tableContent?.scrollWidth,
+    'overflow-x (CSS)': 'auto',
+    'overflow-x (computed)': tableContent ? getComputedStyle(tableContent).overflowX : null,
+    hasHorizontalScroll: (tableContent?.scrollWidth || 0) > (tableContent?.offsetWidth || 0)
+  })
+
+  console.log('📊 .table-inner (NOVÝ WRAPPER):', {
+    offsetWidth: tableInner?.offsetWidth,
+    scrollWidth: tableInner?.scrollWidth,
+    minWidth: tableInner?.style.minWidth,
+    'width (CSS)': 'fit-content',
+    'width (computed)': tableInner ? getComputedStyle(tableInner).width : null
+  })
+
+  console.log('📊 .grid-header:', {
+    offsetWidth: headerEl?.offsetWidth,
+    scrollWidth: headerEl?.scrollWidth,
+    gridTemplateColumns: headerEl?.style.gridTemplateColumns,
+    'minWidth removed': '✅'
+  })
+
+  console.log('📊 .scroller:', {
+    offsetWidth: scrollerEl?.offsetWidth,
+    scrollWidth: scrollerEl?.scrollWidth,
+    'overflow-x (CSS)': 'hidden',
+    'overflow-x (computed)': scrollerEl ? getComputedStyle(scrollerEl).overflowX : null,
+    'overflow-y (computed)': scrollerEl ? getComputedStyle(scrollerEl).overflowY : null,
+    hasHorizontalScroll: (scrollerEl?.scrollWidth || 0) > (scrollerEl?.offsetWidth || 0)
+  })
+
+  console.log('📊 .grid-row (first):', {
+    offsetWidth: firstRow?.offsetWidth,
+    scrollWidth: firstRow?.scrollWidth,
+    gridTemplateColumns: firstRow?.style.gridTemplateColumns,
+    'minWidth removed': '✅'
+  })
+
+  console.log('🎯 COLUMN GROUPING CHECK:')
+  console.log('  .table-inner width === .grid-header width?',
+    tableInner?.offsetWidth === headerEl?.offsetWidth ? '✅' : '❌',
+    `(${tableInner?.offsetWidth} vs ${headerEl?.offsetWidth})`
+  )
+  console.log('  .table-inner width === .scroller width?',
+    tableInner?.offsetWidth === scrollerEl?.offsetWidth ? '✅' : '❌',
+    `(${tableInner?.offsetWidth} vs ${scrollerEl?.offsetWidth})`
+  )
+  console.log('  Header width === Row width?',
+    headerEl?.offsetWidth === firstRow?.offsetWidth ? '✅' : '❌',
+    `(${headerEl?.offsetWidth} vs ${firstRow?.offsetWidth})`
+  )
+  console.log('  Scroller has horizontal scroll?',
+    (scrollerEl?.scrollWidth || 0) > (scrollerEl?.offsetWidth || 0) ? '❌ PROBLÉM!' : '✅ OK'
+  )
+
+  console.log('⚠️ CSS SPEC VIOLATION CHECK:')
+  if (scrollerEl) {
+    const computed = getComputedStyle(scrollerEl)
+    const overflowX = computed.overflowX
+    const overflowY = computed.overflowY
+    console.log(`  overflow-x: ${overflowX}, overflow-y: ${overflowY}`)
+    if (overflowX === 'auto' && overflowY === 'auto') {
+      console.log('  ❌ PROBLÉM: overflow-x konvertované z "visible" na "auto"!')
+      console.log('  → Toto vytvára DRUHÝ horizontal scrollbar!')
+    } else if (overflowX === 'hidden' && overflowY === 'auto') {
+      console.log('  ✅ OK: overflow-x je "hidden", overflow-y je "auto"')
+      console.log('  → Žiadny vnútorný horizontal scroll v .scroller!')
+    }
+  }
+
+  console.groupEnd()
+
+  // 🔍 RIEŠENIE C: Event listener na scroll (debug)
+  if (tableContent && scrollerEl) {
+    let lastScrollLeft = 0
+
+    const handleTableContentScroll = () => {
+      const scrollLeft = tableContent.scrollLeft
+      const scrollDelta = scrollLeft - lastScrollLeft
+      lastScrollLeft = scrollLeft
+
+      const currentHeaderLeft = headerEl?.getBoundingClientRect().left || 0
+      const currentRowLeft = firstRow?.getBoundingClientRect().left || 0
+      const misalignment = Math.abs(currentHeaderLeft - currentRowLeft)
+
+      console.log('🔄 .table-content scroll:', {
+        scrollLeft,
+        scrollDelta,
+        headerOffsetLeft: currentHeaderLeft,
+        rowOffsetLeft: currentRowLeft,
+        misalignment: misalignment.toFixed(2) + 'px',
+        status: misalignment < 1 ? '✅ ALIGNED' : '❌ MISALIGNED'
+      })
+    }
+
+    const handleScrollerScroll = () => {
+      if (scrollerEl.scrollLeft !== 0) {
+        console.warn('⚠️ .scroller horizontal scroll DETECTED:', {
+          scrollLeft: scrollerEl.scrollLeft,
+          message: 'This should NOT happen! Rows should not scroll horizontally inside .scroller',
+          solution: 'Check if .scroller has overflow-x: hidden (not visible or auto)'
+        })
+      }
+    }
+
+    tableContent.addEventListener('scroll', handleTableContentScroll, { passive: true })
+    scrollerEl.addEventListener('scroll', handleScrollerScroll, { passive: true })
+    console.log('🎯 Scroll event listeners registered for debugging')
+
+    // Cleanup
+    ;(window as any).__dataGridScrollCleanup = (window as any).__dataGridScrollCleanup || []
+    ;(window as any).__dataGridScrollCleanup.push(() => {
+      tableContent?.removeEventListener('scroll', handleTableContentScroll)
+      scrollerEl?.removeEventListener('scroll', handleScrollerScroll)
+    })
+  }
 })
+
+// ✅ RIEŠENIE #3: Watch props.columns a syncni ich do store
+// Toto zabezpečí, že keď parent (App.vue) zmení props.columns,
+// zmeny sa prejavia aj v tabuľke
+watch(
+  () => props.columns,
+  (newColumns) => {
+    // ✅ RIEŠENIE: Guard - wait until store is ready and columns exist
+    if (!store || !newColumns || newColumns.length === 0) {
+      return
+    }
+
+    logger.info('[DataGrid] props.columns changed, syncing to store', {
+      columnCount: newColumns.length
+    })
+
+    // Update store.columns to match props.columns
+    // But preserve column states (isVisible, width) if they were changed by user
+    newColumns.forEach((propCol: GridColumn) => {
+        const existingCol = store.columns.find((c: GridColumn) => c.name === propCol.name)
+
+        if (existingCol) {
+          // Column already exists in store
+          // Update header, dataType, etc. from props, but keep user changes (isVisible, width)
+          // Keep user's isVisible if it was changed, otherwise use prop
+          // Keep user's width if it was changed, otherwise use prop
+          store.updateColumn(propCol.name, {
+            header: propCol.header,
+            dataType: propCol.dataType
+          })
+        } else {
+          // New column from props - add it to store
+          store.addColumn(propCol)
+        }
+      })
+  },
+  { deep: true, immediate: true }  // immediate: true = run on mount
+)
 
 // Cleanup on unmount (must be at top level, NOT inside onMounted)
 onBeforeUnmount(() => {
   window.removeEventListener('resize', measureContainerHeight)
   document.removeEventListener('mouseup', handleDocumentMouseUp)
   document.removeEventListener('keydown', handleKeyboardShortcuts)
+
+  // ✅ RIEŠENIE: Cleanup scroll event handlers
+  if ((window as any).__dataGridScrollCleanup) {
+    ;(window as any).__dataGridScrollCleanup.forEach((cleanup: () => void) => cleanup())
+    ;(window as any).__dataGridScrollCleanup = []
+  }
+
   logger.info('🧹 Cleanup: All event listeners removed')
 })
 
@@ -419,8 +637,8 @@ const loadingState = ref({
   percentage: 0
 })
 
-// DynamicScroller ref for force updates
-const scrollerRef = ref<InstanceType<typeof DynamicScroller>>()
+// Scroller div ref for measurements
+const scrollerRef = ref<HTMLDivElement>()
 
 // Get selected rows for copy/paste operations
 const getSelectedRows = () => {
@@ -439,21 +657,27 @@ const getDataColumnNames = () => {
     .map((col: GridColumn) => col.name)
 }
 
-// Copy handler
+// Copy handler - copies ONLY selected cells with position preservation
 const handleCopy = async () => {
-  const rows = getSelectedRows()
-  if (rows.length === 0) {
-    console.warn('No rows selected for copy')
+  console.log('[DataGrid] handleCopy called, selectedCells:', store.selectedCells.size)
+
+  if (store.selectedCells.size === 0) {
+    console.warn('[DataGrid] No cells selected for copy')
     return
   }
 
-  const columnNames = getDataColumnNames()
-  const result = await copyPaste.copyToClipboard(rows, columnNames, { includeHeaders: true })
+  // ✅ RIEŠENIE #1: Use copySelectedCells instead of copyToClipboard
+  // This copies ONLY selected cells (not full rows) and preserves their positions
+  const result = await copyPaste.copySelectedCells(
+    store.selectedCells,
+    store.rows,
+    dataColumns.value
+  )
 
   if (result.success) {
-    console.log(result.message)
+    console.log('[DataGrid] Copy successful:', result.message)
   } else {
-    console.error(result.message)
+    console.error('[DataGrid] Copy failed:', result.message)
   }
 }
 
@@ -560,10 +784,10 @@ shortcuts.registerShortcuts(createDefaultShortcuts({
 const visibleRows = computed(() => store.visibleRows)
 
 // Use provided columns or default to store columns WITH DEFAULTS
+// ✅ RIEŠENIE #2: VŽDY používaj store.columns (nie props.columns)
+// Props.columns sa používajú len na inicializáciu v watcheri nižšie
 const dataColumns = computed(() => {
-  const cols = Array.isArray(props.columns) && props.columns.length > 0
-    ? props.columns
-    : store.columns
+  const cols = store.columns
 
   // Apply defaults to DATA columns (not special columns)
   return cols.map((col: GridColumn) => {
@@ -714,6 +938,15 @@ onBeforeMount(() => {
 // ✅ RIEŠENIE #3: Cleanup on unmount to prevent memory leaks
 onBeforeUnmount(() => {
   logger.info('🔄 Component before unmount - starting cleanup')
+
+  // Cleanup shared observer
+  if (sharedObserver.value) {
+    console.log('[DataGrid] Disconnecting SharedIntersectionObserver...')
+    sharedObserver.value.disconnect()
+    sharedObserver.value = null
+  }
+  rowVisibility.value.clear()
+  console.log('[DataGrid] SharedIntersectionObserver destroyed for instance:', instanceId)
 
   // Clear validation state
   if (validation) {
@@ -999,8 +1232,8 @@ const specialColumns = computed(() => {
 })
 
 // Validation column (goes after data columns, before action columns)
-// Uses autoWidth (1fr) to fill remaining space between data columns and action columns
-// NO maxWidth constraint - can expand as much as needed for long validation messages
+// ✅ FIX: Uses fixed width (NOT autoWidth) to prevent collapsing on horizontal scroll
+// Width can be overridden from backend config like other columns
 const validationColumn = computed(() => {
   const cols: GridColumn[] = []
   const config = store.config
@@ -1009,10 +1242,10 @@ const validationColumn = computed(() => {
     cols.push({
       name: '__validationAlerts',
       header: '⚠ Validation',
-      width: 200,  // Default width (only used if autoWidth is false)
-      minWidth: 150,
-      maxWidth: 9999,  // No maximum - can grow as needed
-      autoWidth: true,  // Use 1fr to fill remaining space to full width
+      width: 150,        // ✅ FIX: Default fixed width (configurable from backend)
+      minWidth: 100,     // ✅ FIX: Minimum width (configurable from backend)
+      maxWidth: 300,     // ✅ FIX: Maximum width (configurable from backend)
+      autoWidth: false,  // ✅ FIX: NO autoWidth - funguje ako ostatné stĺpce
       isVisible: true,
       isReadOnly: true,
       isSortable: false,
@@ -1098,6 +1331,31 @@ const gridTemplateColumns = computed(() => {
   console.log('[GridTemplate] Generated Template:', template)
 
   return template
+})
+
+// ✅ RIEŠENIE #3B: Debug watch to verify gridTemplateColumns recalculates after AutoFit
+watch(gridTemplateColumns, (newVal) => {
+  console.log('[DataGrid] ✅ gridTemplateColumns CHANGED:', newVal)
+}, { immediate: false })
+
+// Calculate minimum table width as sum of all visible column widths
+// This enables horizontal scroll when table is wider than container
+const minTableWidth = computed(() => {
+  const totalWidth = allColumns.value.reduce((sum: number, col: GridColumn) => {
+    // Only count visible columns (visibleForGrid !== false)
+    // This includes special columns if they are shown
+    if (col.visibleForGrid === false) {
+      return sum
+    }
+    // ✅ Skip autoWidth columns (1fr) - they should fill remaining space, not force min-width
+    if (col.autoWidth) {
+      return sum
+    }
+    return sum + col.width
+  }, 0)
+
+  console.log('[GridTemplate] Min Table Width (fixed columns only):', totalWidth, 'px')
+  return totalWidth
 })
 
 // Watch for config changes from props
@@ -1354,38 +1612,51 @@ const hiddenColumns = computed(() => {
 })
 
 function handleHideColumn(columnName: string) {
-  const col = dataColumns.value.find((c: GridColumn) => c.name === columnName)
+  console.log('[DataGrid] ✅ handleHideColumn CALLED with:', columnName)
+
+  const col = store.columns.find((c: GridColumn) => c.name === columnName)
+  console.log('[DataGrid] Found column:', col ? { name: col.name, specialType: col.specialType, isVisible: col.isVisible } : 'NOT FOUND')
+
   if (col && !col.specialType) {
-    col.isVisible = false
-    console.log(`Hidden column: ${columnName}`)
+    store.updateColumn(columnName, { isVisible: false })
+    console.log(`[DataGrid] ✅ Hidden column: ${columnName}`)
+  } else {
+    console.warn(`[DataGrid] ❌ Cannot hide column: ${columnName} (specialType: ${col?.specialType})`)
   }
 }
 
 function showColumn(columnName: string) {
-  const col = dataColumns.value.find((c: GridColumn) => c.name === columnName)
-  if (col) {
-    col.isVisible = true
-    console.log(`Shown column: ${columnName}`)
-  }
+  store.updateColumn(columnName, { isVisible: true })
+  console.log(`Shown column: ${columnName}`)
 }
 
 function showAllColumns() {
-  dataColumns.value.forEach((col: GridColumn) => {
+  store.columns.forEach((col: GridColumn) => {
     if (!col.specialType) {
-      col.isVisible = true
+      store.updateColumn(col.name, { isVisible: true })
     }
   })
   console.log('Shown all columns')
 }
 
 function handleAutoFitColumn(columnName: string) {
-  const col = dataColumns.value.find((c: GridColumn) => c.name === columnName)
-  if (!col) return
+  console.log('[DataGrid] ✅ handleAutoFitColumn CALLED with:', columnName)
+
+  const col = store.columns.find((c: GridColumn) => c.name === columnName)
+  if (!col) {
+    console.warn('[DataGrid] ❌ Column not found:', columnName)
+    return
+  }
+
+  console.log('[DataGrid] Found column:', { name: col.name, currentWidth: col.width, minWidth: col.minWidth, maxWidth: col.maxWidth })
 
   // Create a temporary canvas to measure text width
   const canvas = document.createElement('canvas')
   const context = canvas.getContext('2d')
-  if (!context) return
+  if (!context) {
+    console.error('[DataGrid] ❌ Canvas context not available')
+    return
+  }
 
   // Set font to match grid cell font
   context.font = '14px system-ui, -apple-system, sans-serif'
@@ -1395,6 +1666,7 @@ function handleAutoFitColumn(columnName: string) {
   // Measure header text
   const headerWidth = context.measureText(col.header).width
   maxWidth = Math.max(maxWidth, headerWidth + 40) // Add padding for sort icon, etc.
+  console.log('[DataGrid] Header width:', headerWidth, '→ with padding:', headerWidth + 40)
 
   // Measure all cell values in this column
   store.rows.forEach((row: GridRow) => {
@@ -1407,14 +1679,18 @@ function handleAutoFitColumn(columnName: string) {
     }
   })
 
+  console.log('[DataGrid] Max measured width (with padding):', Math.ceil(maxWidth))
+
   // Apply constraints (min/max width)
   const newWidth = Math.max(
     col.minWidth,
     Math.min(col.maxWidth, Math.ceil(maxWidth))
   )
 
-  col.width = newWidth
-  console.log(`Auto-fit column ${columnName}: ${newWidth}px (measured: ${Math.ceil(maxWidth)}px)`)
+  console.log('[DataGrid] Calculated new width:', newWidth, '(min:', col.minWidth, 'max:', col.maxWidth, ')')
+
+  store.updateColumn(columnName, { width: newWidth })
+  console.log(`[DataGrid] ✅ Auto-fit column ${columnName}: ${newWidth}px (measured: ${Math.ceil(maxWidth)}px)`)
 }
 
 // Filter Flyout state
@@ -1968,17 +2244,9 @@ async function applyAutoRowHeightToAll() {
   await nextTick()
   console.log('[applyAutoRowHeightToAll] Third nextTick complete')
 
-  // Small delay to ensure DynamicScroller has processed all changes
+  // Small delay to ensure rendering completes
   await new Promise((resolve: (value: void | PromiseLike<void>) => void) => setTimeout(resolve, 50))
-  console.log('[applyAutoRowHeightToAll] Delay complete, calling forceUpdate...')
-
-  // Then force DynamicScroller to recalculate sizes
-  if (scrollerRef.value) {
-    scrollerRef.value.forceUpdate()
-    console.log('[applyAutoRowHeightToAll] DynamicScroller forceUpdate() called')
-  } else {
-    console.log('[applyAutoRowHeightToAll] ERROR: scrollerRef is null, cannot forceUpdate')
-  }
+  console.log('[applyAutoRowHeightToAll] Delay complete')
 
   console.log('[applyAutoRowHeightToAll] ========== COMPLETE ==========')
 }
@@ -2015,17 +2283,9 @@ async function resetAllRowHeights() {
   await nextTick()
   console.log('[resetAllRowHeights] Third nextTick complete')
 
-  // Small delay to ensure DynamicScroller has processed all changes
+  // Small delay to ensure rendering completes
   await new Promise((resolve: (value: void | PromiseLike<void>) => void) => setTimeout(resolve, 50))
-  console.log('[resetAllRowHeights] Delay complete, calling forceUpdate...')
-
-  // Then force DynamicScroller to recalculate sizes
-  if (scrollerRef.value) {
-    scrollerRef.value.forceUpdate()
-    console.log('[resetAllRowHeights] DynamicScroller forceUpdate() called')
-  } else {
-    console.log('[resetAllRowHeights] ERROR: scrollerRef is null, cannot forceUpdate')
-  }
+  console.log('[resetAllRowHeights] Delay complete')
 
   console.log('[resetAllRowHeights] COMPLETE')
 }
@@ -2384,9 +2644,9 @@ const cssVariables = computed(() => {
   const themeVars = generateDataGridCSSVariables(mergedTheme.value)
   return {
     ...themeVars,
-    '--dg-min-table-width': props.minTableWidth ? `${props.minTableWidth}px` : 'fit-content',
+    '--dg-min-table-width': `${minTableWidth.value}px`,  // ✅ Use computed minTableWidth (fixed columns only)
     width: props.width || '100%',
-    height: props.height || '600px'
+    height: props.height || '800px'  // ✅ Zvýšená default výška pre pagination a scrolling
   }
 })
 
@@ -2462,7 +2722,7 @@ const enhancedValidation = {
   }
 }
 
-// Expose validation, copy/paste, and shortcuts to parent components
+// Expose validation, copy/paste, shortcuts, and grid state to parent components
 defineExpose({
   loadDataFromBackend,
   validation: enhancedValidation,
@@ -2470,7 +2730,13 @@ defineExpose({
   shortcuts,
   handleCopy,
   handlePaste,
-  handleCut
+  handleCut,
+  isGridReady,  // ✅ RIEŠENIE #3: Expose grid ready state for validation guard
+  store,  // ✅ Expose store for advanced use cases
+  getColumns: () => store.columns,          // ✅ NOVÁ metóda - vráti aktuálne stĺpce
+  setColumns: (columns: GridColumn[]) => {  // ✅ NOVÁ metóda - nastaví stĺpce
+    store.setColumns(columns)
+  }
 })
 </script>
 
@@ -2478,11 +2744,12 @@ defineExpose({
 .data-grid {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* height: 100%; ← REMOVED: Conflict with inline style from props.height */
+  /* Inline style from cssVariables (props.height || '800px') takes precedence */
   border: 1px solid var(--dg-border-grid, #ddd);
   background-color: var(--dg-cell-bg, white);
   border-radius: 4px;
-  overflow: hidden;
+  overflow: hidden; /* ✅ Zachová flex layout a umožní správny scrolling */
   position: relative; /* For absolute positioning of overlay */
 }
 
@@ -2744,24 +3011,66 @@ defineExpose({
 }
 
 .grid-container {
+  flex: 1 1 0; /* ✅ FIX: Allow shrinking to fit pagination */
+  display: flex;
+  flex-direction: column;
+  overflow: visible; /* ✅ FIX: Allow child scrolling (horizontal scroll fix) */
+  width: 100%; /* CRITICAL: Fill full width of parent */
+  min-width: 0; /* ✅ Allow shrinking below content width */
+  min-height: 0; /* ✅ CRITICAL: Allow flex child to be smaller than content - fixes pagination visibility */
+}
+
+/* ✅ Table content wrapper - horizontal scroll container */
+.table-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  width: 100%; /* CRITICAL: Fill full width of parent */
-  min-width: 100%; /* CRITICAL: Ensure table fills full width */
+  width: 100%;
+  min-height: 0; /* Allow flex item to shrink */
+  overflow-x: auto; /* ✅ Horizontal scroll pre celý .table-inner (header + rows) */
+  overflow-y: hidden; /* Vertical scroll is on .scroller */
+}
+
+/* ✅ RIEŠENIE A: Wrapper pre column grouping - header + rows v jednom scroll contexte */
+.table-inner {
+  /* minWidth set via inline style from minTableWidth prop */
+  width: fit-content; /* Shrink to content ak je menší ako viewport */
+  display: flex;
+  flex-direction: column;
+  flex: 1; /* Fill vertical space */
+  min-height: 0; /* Allow flex item to shrink */
 }
 
 .scroller {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: auto; /* Enable horizontal scroll when table is wider than container */
+  overflow-y: auto; /* ✅ Vertical scroll pre rows */
+  overflow-x: hidden; /* ✅ RIEŠENIE A: HIDDEN (nie visible!) - no horizontal scroll, zdedí width od .table-inner */
+  min-width: 0; /* Allow flex item to shrink */
+  /* ✅ FIX (Riešenie B): REMOVED min-height - let flex handle height naturally */
 }
 
-/* Scrollbar styling - vertical */
+/* Scrollbar styling - horizontal (on .table-content) */
+.table-content::-webkit-scrollbar {
+  height: 8px;
+}
+
+.table-content::-webkit-scrollbar-track {
+  background: var(--dg-ui-pagination-bg, #f1f1f1);
+}
+
+.table-content::-webkit-scrollbar-thumb {
+  background: var(--dg-border-cell, #c1c1c1);
+  border-radius: 4px;
+}
+
+.table-content::-webkit-scrollbar-thumb:hover {
+  background: var(--dg-ui-resize-grip, #a8a8a8);
+}
+
+/* Scrollbar styling - vertical (on .scroller) */
 .scroller::-webkit-scrollbar {
   width: 8px;
-  height: 8px; /* Height for horizontal scrollbar */
+  /* ✅ FIX: height removed - .scroller has overflow-x: visible, no horizontal scrollbar */
 }
 
 .scroller::-webkit-scrollbar-track {

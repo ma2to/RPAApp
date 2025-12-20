@@ -61,6 +61,8 @@ const props = defineProps<{
   isGridReady?: boolean
   isProcessing?: boolean  // ✅ RIEŠENIE A: Processing flag
   showHiddenColumnsPanel?: boolean  // Optional: Show hidden columns panel (default: true)
+  enableHideColumn?: boolean    // ✅ NOVÝ PROP #1 (default: true) - zapne/vypne Hide v menu
+  enableAutoFit?: boolean        // ✅ NOVÝ PROP #2 (default: true) - zapne/vypne AutoFit v menu
 }>()
 
 const emit = defineEmits<{
@@ -106,18 +108,29 @@ function getSortInfo(columnName: string): { direction: 'asc' | 'desc'; order: nu
 }
 
 function handleHeaderClick(event: MouseEvent, column: GridColumn) {
+  console.log('[DataGridHeader] 🟢 Header CLICKED:', {
+    columnName: column.name,
+    specialType: column.specialType,
+    isSortable: column.isSortable,
+    shiftKey: event.shiftKey,
+    button: event.button
+  })
+
   // For checkbox column, do nothing (checkbox handles its own click)
   if (column.specialType === 'Checkbox') {
+    console.log('[DataGridHeader] ❌ Checkbox column - ignoring click')
     return
   }
 
   // For sortable columns with Shift key, toggle sort
   if (column.isSortable && event.shiftKey) {
+    console.log('[DataGridHeader] 🔄 Sortable + Shift - calling handleSort')
     handleSort(column, true) // multi-sort mode
     return
   }
 
   // For other columns, show context menu
+  console.log('[DataGridHeader] 📋 Calling showHeaderContextMenu')
   showHeaderContextMenu(event, column)
 }
 
@@ -174,23 +187,36 @@ function onResizeEnd() {
 }
 
 function showHeaderContextMenu(event: MouseEvent, column: GridColumn) {
+  console.log('[DataGridHeader] 🔵 Context menu requested for column:', column.name)
+  console.log('[DataGridHeader] Column props:', {
+    specialType: column.specialType,
+    name: column.name,
+    header: column.header,
+    isSortable: column.isSortable,
+    isFilterable: column.isFilterable
+  })
+  console.log('[DataGridHeader] showHiddenColumnsPanel prop:', props.showHiddenColumnsPanel)
+  console.log('[DataGridHeader] isGridReady:', props.isGridReady, ', isProcessing:', props.isProcessing)
+
   // ✅ FIX: Early return if grid is not ready
   if (props.isGridReady === false) {
-    console.error('[showHeaderContextMenu] Grid not ready yet')
+    console.error('[showHeaderContextMenu] ❌ Grid not ready yet')
     return
   }
 
   // ✅ FIX: Early return if store is not initialized
   if (!store) {
-    console.error('[showHeaderContextMenu] Store not initialized yet')
+    console.error('[showHeaderContextMenu] ❌ Store not initialized yet')
     return
   }
 
   // ✅ RIEŠENIE A: Check processing flag
   if (props.isProcessing) {
-    console.error('[showHeaderContextMenu] Grid is currently processing data')
+    console.error('[showHeaderContextMenu] ❌ Grid is currently processing data')
     return  // Silent return - no alert needed
   }
+
+  console.log('[DataGridHeader] ✅ All checks passed, building menu items...')
 
   // ✅ RIEŠENIE D: Defensive copy of reactive data
   const sortColumnsCopy = [...store.sortColumns]
@@ -301,22 +327,42 @@ function showHeaderContextMenu(event: MouseEvent, column: GridColumn) {
   }
 
   // Column management options (only for non-special columns)
-  if (!column.specialType) {
+  console.log('[DataGridHeader] Checking column management options, specialType:', column.specialType)
+
+  // ✅ RIEŠENIE #7: Pridaj Auto-fit LEN ak je enableAutoFit !== false
+  if (!column.specialType && props.enableAutoFit !== false) {
+    console.log('[DataGridHeader] ✅ Adding Auto-fit Column option (enableAutoFit !== false)')
     menuItems.push({
       label: 'Auto-fit Column',
       icon: '↔️',
-      onClick: () => emit('autoFitColumn', column.name)
+      onClick: () => {
+        console.log('[DataGridHeader] ↔️ Auto-fit Column clicked for:', column.name)
+        console.log('[DataGridHeader] 🚀 Emitting autoFitColumn event')
+        emit('autoFitColumn', column.name)
+      }
     })
-
-    // Hide option only if showHiddenColumnsPanel is not explicitly false
-    if (props.showHiddenColumnsPanel !== false) {
-      menuItems.push({
-        label: 'Hide Column',
-        icon: '👁️',
-        onClick: () => emit('hideColumn', column.name)
-      })
-    }
+  } else if (!column.specialType) {
+    console.log('[DataGridHeader] ❌ NOT adding Auto-fit Column option (enableAutoFit is false)')
   }
+
+  // ✅ RIEŠENIE #8: Pridaj Hide LEN ak je enableHideColumn !== false
+  if (!column.specialType && props.enableHideColumn !== false) {
+    console.log('[DataGridHeader] ✅ Adding Hide Column option (enableHideColumn !== false)')
+    menuItems.push({
+      label: 'Hide Column',
+      icon: '👁️',
+      onClick: () => {
+        console.log('[DataGridHeader] 👁️ Hide Column clicked for:', column.name)
+        console.log('[DataGridHeader] 🚀 Emitting hideColumn event')
+        emit('hideColumn', column.name)
+      }
+    })
+  } else if (!column.specialType) {
+    console.log('[DataGridHeader] ❌ NOT adding Hide Column option (enableHideColumn is false)')
+  }
+
+  console.log('[DataGridHeader] 📋 Total menu items:', menuItems.length)
+  console.log('[DataGridHeader] Menu items labels:', menuItems.map((item: any) => item.label || '---divider---'))
 
   ContextMenu.showContextMenu({
     x: event.x,
@@ -337,14 +383,9 @@ function showHeaderContextMenu(event: MouseEvent, column: GridColumn) {
   position: sticky;
   top: 0;
   z-index: 10;
-  width: 100%; /* CRITICAL: Always fill container width */
-  max-width: 100%; /* CRITICAL: Never exceed container width */
-  /* CRITICAL: Compensate for vertical scrollbar width to align columns with rows */
-  /* Reduced to 8px for narrower spacing (user requested), can be customized via CSS variable */
-  padding-right: var(--dg-scrollbar-width, 8px);
+  /* ✅ RIEŠENIE A: Width zdedená od .table-inner parent - no explicit width/minWidth needed */
+  padding-right: 0;
   box-sizing: border-box;
-  /* REMOVED min-width: fit-content - this was causing header to have different width than rows! */
-  /* Header MUST have identical width to rows for 1fr to resolve to same pixels */
 }
 
 .header-cell {
