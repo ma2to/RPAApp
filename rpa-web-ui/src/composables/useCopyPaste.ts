@@ -161,21 +161,23 @@ export function useCopyPaste() {
           currentCell = ''
 
           if (isFirstRow) {
-            // First row = headers (or auto-generate if not header-like)
-            // ✅ FIX: Poskytnúť isSingleCell flag
-            if (isHeaderRow(currentRow, isSingleCell)) {
-              headers = [...currentRow]
-            } else {
-              // First row is data - generate column names
-              headers = currentRow.map((_, idx) => `Column${idx + 1}`)
+            // ✅ FIX: NEVER treat first row as header for copy/paste
+            // Always generate Column1, Column2, ... and preserve all data
+            headers = currentRow.map((_, idx) => `Column${idx + 1}`)
 
-              // Add first row as data
-              const firstDataRow: Record<string, any> = {}
-              for (let j = 0; j < Math.min(headers.length, currentRow.length); j++) {
-                firstDataRow[headers[j]] = currentRow[j] || null
-              }
-              result.push(firstDataRow)
+            // Add first row as data (preserve all rows)
+            const firstDataRow: Record<string, any> = {}
+            for (let j = 0; j < headers.length; j++) {
+              // ✅ FIX: Use nullish coalescing (??) instead of OR (||)
+              // This preserves empty strings '' instead of converting to null
+              firstDataRow[headers[j]] = currentRow[j] ?? null
             }
+            result.push(firstDataRow)
+
+            console.log('[useCopyPaste] parseTabSeparated - first row preserved as data:', {
+              headers,
+              firstDataRow
+            })
 
             isFirstRow = false
           } else {
@@ -183,7 +185,8 @@ export function useCopyPaste() {
             const dataRow: Record<string, any> = {}
             for (let j = 0; j < Math.min(headers.length, currentRow.length); j++) {
               // CRITICAL: Values are UNESCAPED (quotes removed, "" → ")
-              dataRow[headers[j]] = currentRow[j] || null
+              // ✅ FIX: Use nullish coalescing (??) to preserve empty strings
+              dataRow[headers[j]] = currentRow[j] ?? null
             }
             result.push(dataRow)
           }
@@ -202,23 +205,25 @@ export function useCopyPaste() {
       currentRow.push(currentCell)
 
       if (isFirstRow && headers.length === 0) {
-        // Only one row total - treat as headers or generate column names
-        // ✅ FIX: Poskytnúť isSingleCell flag
-        if (isHeaderRow(currentRow, isSingleCell)) {
-          headers = [...currentRow]
-        } else {
-          headers = currentRow.map((_, idx) => `Column${idx + 1}`)
-          const dataRow: Record<string, any> = {}
-          for (let j = 0; j < Math.min(headers.length, currentRow.length); j++) {
-            dataRow[headers[j]] = currentRow[j] || null
-          }
-          result.push(dataRow)
+        // ✅ FIX: Only one row total - always treat as data, not header
+        headers = currentRow.map((_, idx) => `Column${idx + 1}`)
+        const dataRow: Record<string, any> = {}
+        for (let j = 0; j < headers.length; j++) {
+          // ✅ FIX: Use nullish coalescing (??) to preserve empty strings
+          dataRow[headers[j]] = currentRow[j] ?? null
         }
+        result.push(dataRow)
+
+        console.log('[useCopyPaste] parseTabSeparated - single row preserved as data:', {
+          headers,
+          dataRow
+        })
       } else if (headers.length > 0) {
         // Last data row
         const dataRow: Record<string, any> = {}
         for (let j = 0; j < Math.min(headers.length, currentRow.length); j++) {
-          dataRow[headers[j]] = currentRow[j] || null
+          // ✅ FIX: Use nullish coalescing (??) to preserve empty strings
+          dataRow[headers[j]] = currentRow[j] ?? null
         }
         result.push(dataRow)
       }
@@ -291,6 +296,14 @@ export function useCopyPaste() {
         selectedCells: Array.from(selectedCells)
       })
 
+      // ✅ FIX: Filter out special columns BEFORE calculating indices (consistent with paste)
+      const dataColumnsOnly = allColumns.filter((col: any) => !col.specialType)
+
+      console.log('[useCopyPaste] Using data columns only:', {
+        allColumnsCount: allColumns.length,
+        dataColumnsCount: dataColumnsOnly.length
+      })
+
       // Parse selected cells to get row/column indices
       const cellPositions: Array<{ rowId: string; rowIndex: number; columnName: string; columnIndex: number; value: any }> = []
 
@@ -299,13 +312,18 @@ export function useCopyPaste() {
         const row = allRows.find(r => r.rowId === rowId)
         if (!row) return
 
-        const columnIndex = allColumns.findIndex(c => c.name === columnName)
+        // ✅ FIX: Use dataColumnsOnly instead of allColumns for index calculation
+        const columnIndex = dataColumnsOnly.findIndex(c => c.name === columnName)
         if (columnIndex === -1) return
+
+        // ✅ FIX: Use VISUAL row index (position in current allRows array after filter/sort)
+        // NOT GridRow.rowIndex (which is original index before filter/sort)
+        const visualRowIndex = allRows.findIndex(r => r.rowId === rowId)
 
         const cell = row.cells.find(c => c.columnName === columnName)
         cellPositions.push({
           rowId,
-          rowIndex: row.rowIndex,
+          rowIndex: visualRowIndex !== -1 ? visualRowIndex : row.rowIndex,  // Visual position!
           columnName,
           columnIndex,
           value: cell?.value

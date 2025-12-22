@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "rpa-web-ui": "file:../rpa-web-ui"
+  }
+}

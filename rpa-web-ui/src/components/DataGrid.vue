@@ -880,17 +880,26 @@ async function handlePasteSelectedCells() {
       // ✅ FIX: Find index in dataColumnsOnly instead of allColumns
       const firstColIdx = dataColumnsOnly.findIndex((c: GridColumn) => c.name === firstColName)
 
-      if (firstRow && firstColIdx !== -1) {
+      if (firstRow) {
         targetRowIndex = firstRow.rowIndex
-        targetColIndex = firstColIdx  // ✅ Now this is index in dataColumnsOnly
+        // ✅ FIX: If target is special column (findIndex = -1), use first data column
+        targetColIndex = firstColIdx !== -1 ? firstColIdx : 0
       }
-    }
 
-    console.log('[DataGrid] Pasting at position:', {
-      targetRowIndex,
-      targetColIndex,
-      dataColumnsCount: dataColumnsOnly.length
-    })
+      console.log('[DataGrid] Pasting at position:', {
+        targetRowIndex,
+        targetColIndex,
+        firstColName,
+        isSpecialColumn: targetColIndex === 0 && firstColIdx === -1,
+        dataColumnsCount: dataColumnsOnly.length
+      })
+    } else {
+      console.log('[DataGrid] Pasting at position (no selection):', {
+        targetRowIndex,
+        targetColIndex,
+        dataColumnsCount: dataColumnsOnly.length
+      })
+    }
 
     // Paste data row by row, column by column
     result.rows.forEach((rowData: any, rowOffset: number) => {
@@ -903,8 +912,14 @@ async function handlePasteSelectedCells() {
 
       const targetRow = store.rows[pasteRowIndex]
 
-      // Paste each column value
-      Object.keys(rowData).forEach((columnKey: string, colOffset: number) => {
+      // ✅ FIX: Use headers array instead of Object.keys to preserve correct column order
+      // Object.keys may return keys in unexpected order, headers array is always in correct order
+      if (!result.headers) {
+        console.warn('[DataGrid] No headers in paste result, skipping row')
+        return
+      }
+
+      result.headers.forEach((columnKey: string, colOffset: number) => {
         const pasteColIndex = targetColIndex + colOffset
 
         if (pasteColIndex >= dataColumnsOnly.length) {
@@ -913,7 +928,7 @@ async function handlePasteSelectedCells() {
         }
 
         const targetColumn = dataColumnsOnly[pasteColIndex]
-        const value = rowData[columnKey]
+        const value = rowData[columnKey] ?? null  // Use nullish coalescing for undefined values
 
         // Update cell value
         store.updateCell(targetRow.rowId, targetColumn.name, value)
@@ -922,6 +937,7 @@ async function handlePasteSelectedCells() {
           row: pasteRowIndex,
           col: pasteColIndex,
           columnName: targetColumn.name,
+          columnKey,
           value
         })
       })

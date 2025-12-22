@@ -7,7 +7,6 @@
   Všetok demo kód je zakomentovaný aby knižnica nemala vlastný "default template".
   Ak potrebuješ spustiť demo pre vývoj/testovanie, odkomentuj kód nižšie.
 -->
-<!--
 <template>
   <div class="demo-disabled">
     <h1>📦 RPA Web UI Library - Demo</h1>
@@ -77,7 +76,6 @@
   font-size: 14px;
 }
 </style>
--->
 <!--
 ═══════════════════════════════════════════════════════════════════════════════
 ZAKOMENTOVANÝ DEMO KÓD - Odkomentuj ak potrebuješ spustiť demo
