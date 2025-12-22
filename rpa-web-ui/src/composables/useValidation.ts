@@ -58,14 +58,6 @@ export function useValidation() {
   function validateCell(rowId: string, columnName: string, value: any): ValidationResult {
     const rules = validationRules.value.get(columnName) || []
 
-    console.log('[useValidation] validateCell:', {
-      rowId,
-      columnName,
-      value,
-      ruleCount: rules.length,
-      isEmpty: value == null || value === ''
-    })
-
     // Check if value is empty
     const isEmpty = value == null || value === ''
 
@@ -172,11 +164,6 @@ export function useValidation() {
       }
     }
 
-    console.log('[useValidation] validateCell PASSED', {
-      rowId,
-      columnName,
-      value
-    })
     return { isValid: true }
   }
 
@@ -194,15 +181,6 @@ export function useValidation() {
     rowCells?: Array<{ columnName: string; value: any }>,
     skipErrorCountUpdate = false  // ✅ New parameter - skip updateErrorCount in batch mode
   ): Promise<void> {
-    console.log('[useValidation] validateCellDirect:', {
-      rowId,
-      columnName,
-      value,
-      hasRowCells: !!rowCells,
-      rowCellsCount: rowCells?.length,
-      skipErrorCountUpdate
-    })
-
     // If row cells provided, check if entire row is empty
     if (rowCells && isRowCompletelyEmpty(rowCells)) {
       console.log('[useValidation] validateCellDirect: Row is completely empty, clearing errors', {
@@ -262,9 +240,6 @@ export function useValidation() {
         })
       } else {
         delete validationErrors[rowId]
-        console.log('[useValidation] validateCellDirect: Cleared all errors for row', {
-          rowId
-        })
       }
     }
 

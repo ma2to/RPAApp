@@ -1027,16 +1027,6 @@ function calculateOptimalBatchSize(totalCells: number): number {
 async function validateAllCellsInBatches() {
   // ✅ RIEŠENIE #5: If validation is running, cancel it and wait for completion
   if (isValidating.value) {
-    // ✅ LOG POINT #1: Pred while loop wait - diagnostic info
-    console.log('═══════════════════════════════════════════════════')
-    console.log('[validateAllCellsInBatches] ⚠️ WAIT START')
-    console.log(`  isValidating: ${isValidating.value}`)
-    console.log(`  Timestamp: ${new Date().toISOString()}`)
-    console.log(`  Stack trace:`)
-    console.log(new Error().stack)
-    console.log('═══════════════════════════════════════════════════')
-
-    console.log('[validateAllCellsInBatches] Cancelling previous validation...')
     validationCancelled = true
 
     // ✅ FIX: Async polling s OPRAVENOU deadlock detection
@@ -1046,8 +1036,6 @@ async function validateAllCellsInBatches() {
 
       while (isValidating.value && Date.now() - startWait < maxWaitMs) {
         iterations++
-        console.log(`[waitForValidation] Waiting iteration ${iterations}, elapsed: ${Date.now() - startWait}ms, isValidating: ${isValidating.value}`)
-
         // Yield to UI thread
         await nextTick()
         await new Promise((resolve: (value: void | PromiseLike<void>) => void) => setTimeout(resolve, 100))
@@ -1086,19 +1074,10 @@ async function validateAllCellsInBatches() {
         return false  // Validation NOT ready
       }
 
-      console.log(`[waitForValidation] ✅ Validation completed after ${Date.now() - startWait}ms (${iterations} iterations)`)
       return true  // Validation ready
     }
 
     const validationReady = await waitForValidation(5000)
-
-    // ✅ LOG POINT #1: Po while loop wait - result
-    console.log('═══════════════════════════════════════════════════')
-    console.log('[validateAllCellsInBatches] WAIT END')
-    console.log(`  validationReady: ${validationReady}`)
-    console.log(`  isValidating after wait: ${isValidating.value}`)
-    console.log(`  Timestamp: ${new Date().toISOString()}`)
-    console.log('═══════════════════════════════════════════════════')
 
     if (!validationReady) {
       console.error('[validateAllCellsInBatches] ❌ WAIT FAILED - aborting')
@@ -1112,13 +1091,6 @@ async function validateAllCellsInBatches() {
   validationCancelled = false
 
   try {
-    console.log('[validateAllCellsInBatches] 🔍 START', {
-      enableValidation: store?.config?.enableValidation ?? false,
-      hasValidation: !!validation,
-      totalRows: store?.rows?.length ?? 0,
-      totalColumns: store?.columns?.length ?? 0
-    })
-
     // 📊 LOG: Validation START
     console.info('═══════════════════════════════════════════════════')
     console.info('🔍 VALIDATION START')
@@ -1127,12 +1099,10 @@ async function validateAllCellsInBatches() {
 
     // ✅ FIX: Comprehensive validation checks
     if (!store || !store.config || !store.rows || !validation) {
-      console.log('[validateAllCellsInBatches] ⚠️ SKIPPED - store or validation not initialized')
       return
     }
 
     if (!store.config.enableValidation) {
-      console.log('[validateAllCellsInBatches] ⚠️ SKIPPED - validation not enabled')
       return
     }
 
@@ -1145,16 +1115,8 @@ async function validateAllCellsInBatches() {
       }
     }
 
-    console.log('[validateAllCellsInBatches] 🔍 Columns with rules:', {
-      totalColumns: store?.columns?.length ?? 0,
-      columnsWithRules: columnsWithRules.size,
-      columns: Array.from(columnsWithRules)
-    })
-
     // ✅ RIEŠENIE #1: EARLY EXIT if no validation rules at all
     if (columnsWithRules.size === 0) {
-      console.log('[validateAllCellsInBatches] ⚠️ NO VALIDATION RULES - skipping validation entirely')
-      console.log('[validateAllCellsInBatches] ✅ SKIPPED - 0 cells validated (no rules defined)')
       return  // ← EXIT - žiadna validácia!
     }
 
@@ -1165,13 +1127,7 @@ async function validateAllCellsInBatches() {
     // Pass forceValidateAll=true to validate ALL cells, including those in currently empty rows
     const cellsToValidate = store.getCellsNeedingValidation(true, columnsWithRules)
 
-    console.log('[validateAllCellsInBatches] 📋 Cells needing validation:', {
-      count: cellsToValidate.length,
-      sample: cellsToValidate.slice(0, 5).map((c: { rowId: string; columnName: string }) => `${c.rowId}:${c.columnName}`)
-    })
-
     if (cellsToValidate.length === 0) {
-      console.log('[validateAllCellsInBatches] ✅ NO CELLS NEED VALIDATION - all cells already validated')
       return
     }
 
@@ -1187,12 +1143,6 @@ async function validateAllCellsInBatches() {
     const PARALLEL_BATCH_SIZE = calculateOptimalBatchSize(cellsToValidate.length)
     let validatedCount = 0
 
-    console.log('[validateAllCellsInBatches] Starting PARALLEL batch validation...', {
-      totalCells: cellsToValidate.length,
-      parallelBatchSize: PARALLEL_BATCH_SIZE,
-      estimatedBatches: Math.ceil(cellsToValidate.length / PARALLEL_BATCH_SIZE)
-    })
-
     // Process in batches - validate ALL cells in batch SIMULTANEOUSLY
     for (let i = 0; i < cellsToValidate.length; i += PARALLEL_BATCH_SIZE) {
       // ✅ RIEŠENIE #5: Check cancellation before each batch
@@ -1203,12 +1153,6 @@ async function validateAllCellsInBatches() {
 
       const batch = cellsToValidate.slice(i, i + PARALLEL_BATCH_SIZE)
       const batchNumber = Math.floor(i / PARALLEL_BATCH_SIZE) + 1
-
-      console.log(`[validateAllCellsInBatches] 📦 Processing batch ${batchNumber} (PARALLEL):`, {
-        batchSize: batch.length,
-        from: i,
-        to: i + batch.length
-      })
 
       // ✅ Create array of validation promises - ALL cells validate in parallel
       const validationPromises = batch.map(({ rowId, columnName }: { rowId: string; columnName: string }) => {
@@ -1247,22 +1191,10 @@ async function validateAllCellsInBatches() {
 
       // Yield to UI after each batch to prevent freeze
       await nextTick()
-
-      console.log(`[validateAllCellsInBatches] ✓ Batch ${batchNumber} complete (PARALLEL):`, {
-        validated: validatedCount,
-        total: cellsToValidate.length,
-        progress: `${validationProgress.value.percentage}%`
-      })
     }
 
     // ✅ RIEŠENIE #2: Update error count ONCE at the end of batch validation
     validation.updateErrorCount()
-
-    console.log('[validateAllCellsInBatches] 🎉 COMPLETE:', {
-      totalValidated: validatedCount,
-      totalRequested: cellsToValidate.length,
-      success: validatedCount === cellsToValidate.length
-    })
 
     // 📊 LOG: Validation SUCCESS
     console.info('═══════════════════════════════════════════════════')
@@ -1282,17 +1214,12 @@ async function validateAllCellsInBatches() {
 
     // ✅ RIEŠENIE #4: Reset progress tracking
     validationProgress.value.isValidating = false
-
-    console.log('[validateAllCellsInBatches] 🔍 END')
   }
 }
 
 // Watch for autoValidate toggle - validate all cells when enabled
 watch(() => store.config.autoValidate, async (enabled, wasEnabled) => {
-  console.log('[DataGrid] autoValidate changed:', { wasEnabled, enabled })
-
   if (enabled && !wasEnabled && store.config.enableValidation) {
-    console.log('[DataGrid] Auto-validation enabled - validating all unvalidated cells')
     await validateAllCellsInBatches()
   }
 })
@@ -1508,20 +1435,6 @@ watch(() => props.columns, (newColumns) => {
 watch(() => validation?.ruleCount?.value ?? 0, async (newCount, oldCount) => {
   const rulesSize = validation?.validationRules?.value?.size || 0
 
-  // ✅ LOG POINT #2: RuleCount watcher start - enhanced diagnostics
-  console.log('═══════════════════════════════════════════════════')
-  console.log('[WATCHER] VALIDATION RULES CHANGED - START')
-  console.log(`  Old count: ${oldCount} → New count: ${newCount}`)
-  console.log(`  Rules size: ${rulesSize}`)
-
-  // ✅ FIX: Safe access s optional chaining a nullish coalescing
-  const rowCount = store?.rows?.length ?? 0
-  console.log(`  Rows: ${rowCount}`)
-  console.log(`  autoValidate: ${store?.config?.autoValidate ?? false}`)
-  console.log(`  isValidating: ${isValidating.value}`)
-  console.log(`  Timestamp: ${new Date().toISOString()}`)
-  console.log('═══════════════════════════════════════════════════')
-
   // ✅ FIX: Pridať guard check pre store existenciu
   if (!store || !store.rows) {
     console.warn('[WATCHER] Store not initialized yet, skipping validation')
@@ -1533,16 +1446,8 @@ watch(() => validation?.ruleCount?.value ?? 0, async (newCount, oldCount) => {
   // 2. Data already exists
   // 3. Auto-validation is enabled in config
   if (rulesSize === 0 || store.rows.length === 0 || !store.config.autoValidate) {
-    console.log('[WATCHER] Skipping auto-validation:', {
-      noRules: rulesSize === 0,
-      noData: store.rows.length === 0,
-      autoValidateDisabled: !store.config.autoValidate
-    })
     return
   }
-
-  // SOLUTION 1C: Always trigger validation when rules exist and data exists
-  console.log('[WATCHER] Triggering auto-validation for all rows...')
 
   // Clear validation tracking before re-validating with new rules
   store.clearValidationTracking()
@@ -1550,23 +1455,12 @@ watch(() => validation?.ruleCount?.value ?? 0, async (newCount, oldCount) => {
   try {
     // FIXED: Double nextTick to ensure UI is stable before validation
     await nextTick()
-    console.log('[WATCHER] First nextTick done')
     await nextTick()
-    console.log('[WATCHER] Second nextTick done')
 
     await validateAllCellsInBatches()
-
-    // ✅ LOG POINT #2: RuleCount watcher end - success
-    console.log('═══════════════════════════════════════════════════')
-    console.log('[WATCHER] VALIDATION RULES CHANGED - SUCCESS')
-    console.log(`  Timestamp: ${new Date().toISOString()}`)
-    console.log('═══════════════════════════════════════════════════')
   } catch (error) {
-    // ✅ LOG POINT #2: RuleCount watcher end - failed
-    console.log('═══════════════════════════════════════════════════')
     console.error('[WATCHER] VALIDATION RULES CHANGED - FAILED')
     console.error(`  Error: ${error}`)
-    console.log('═══════════════════════════════════════════════════')
 
     // ✅ RIEŠENIE #3: CRITICAL - Force reset isValidating to prevent permanent deadlock
     isValidating.value = false
@@ -1590,52 +1484,22 @@ watch(() => validation?.ruleCount?.value ?? 0, async (newCount, oldCount) => {
   }
 })
 
-// ✅ LOG POINT #3: Watch isValidating state changes for diagnostics
-watch(() => isValidating.value, (newVal, oldVal) => {
-  console.log('═══════════════════════════════════════════════════')
-  console.log('[WATCH isValidating] STATE CHANGED')
-  console.log(`  ${oldVal} → ${newVal}`)
-  console.log(`  Timestamp: ${new Date().toISOString()}`)
-
-  // ✅ Show stack trace to identify who changed isValidating
-  const stack = new Error().stack
-  if (stack) {
-    const stackLines = stack.split('\n').slice(1, 5)
-    console.log(`  Call stack:`)
-    stackLines.forEach(line => console.log(`    ${line.trim()}`))
-  }
-  console.log('═══════════════════════════════════════════════════')
-})
-
 // ✅ RIEŠENIE #4: Deep watch REMOVED - validácia je explicitne volaná v loadDataFromBackend() a v ruleCount watch
 
 // SOLUTION A: Watch errorCount ref from useValidation (reactive counter)
 watch(() => validation?.errorCount?.value ?? 0, async (errorCount, oldErrorCount) => {
   const newErrors = validation?.validationErrors
 
-  console.log('[WATCHER] Validation errors changed!', {
-    errorCount,
-    oldErrorCount,
-    hasErrors: errorCount > 0,
-    isAutoRowHeightEnabled: store.isAutoRowHeightEnabled,
-    validationErrorsKeys: newErrors ? Object.keys(newErrors) : []
-  })
-
   // FIXED: ALWAYS update validationErrorCount, even when errorCount = 0
   // This ensures stale values are cleared when errors are resolved
-  console.log('[WATCHER] Updating validationErrorCount for all rows...')
   store.rows.forEach((row: GridRow) => {
     // If no errors object or no errors for this row, set to 0
     const count = (newErrors && newErrors[row.rowId]) ? newErrors[row.rowId].length : 0
     row.validationErrorCount = count
-    if (count > 0 || row.validationErrorCount !== count) {
-      console.log('[WATCHER] Updated validationErrorCount:', { rowId: row.rowId, count })
-    }
   })
 
   // If no errors, we're done - no need to recalculate heights
   if (!newErrors || errorCount === 0) {
-    console.log('[WATCHER] No validation errors, heights updated, done.')
     return
   }
 
@@ -1644,14 +1508,10 @@ watch(() => validation?.errorCount?.value ?? 0, async (errorCount, oldErrorCount
 
   if (store.isAutoRowHeightEnabled) {
     // If AutoRowHeight is ON, recalculate with validation text included
-    console.log('[WATCHER] AutoRowHeight is ON, calling applyAutoRowHeightToAll...')
     await applyAutoRowHeightToAll()
-    console.log('[WATCHER] applyAutoRowHeightToAll completed')
   } else {
     // If AutoRowHeight is OFF, reset all rows to default height
-    console.log('[WATCHER] AutoRowHeight is OFF, calling resetAllRowHeights...')
     await resetAllRowHeights()
-    console.log('[WATCHER] resetAllRowHeights completed')
   }
 })
 
@@ -1685,8 +1545,6 @@ function handleResize(columnName: string, newWidth: number) {
 }
 
 async function handleCellEditComplete(rowId: string, columnName: string, value: any) {
-  console.log(`[DataGrid] handleCellEditComplete: rowId=${rowId}, columnName=${columnName}, newValue=${value}, autoValidate=${store.config.autoValidate}, autoRowHeight=${store.isAutoRowHeightEnabled}`)
-
   store.updateCell(rowId, columnName, value)
 
   // ✅ RIEŠENIE #4: Early exit checks for validation
@@ -1698,7 +1556,6 @@ async function handleCellEditComplete(rowId: string, columnName: string, value: 
 
   // ✅ RIEŠENIE #4: Skip validation for hidden columns
   if (column.visibleForGrid === false) {
-    console.log('[DataGrid] handleCellEditComplete: Skipping validation - hidden column:', columnName)
     // Continue to row height recalculation (don't return yet)
   }
   // CRITICAL: Validate cell immediately after edit if auto-validate is enabled
@@ -1708,21 +1565,17 @@ async function handleCellEditComplete(rowId: string, columnName: string, value: 
                      validation.validationRules.value.get(columnName)!.length > 0
 
     if (!hasRules) {
-      console.log('[DataGrid] handleCellEditComplete: Skipping validation - no rules:', columnName)
       // Continue to row height recalculation (don't return yet)
     } else {
       // ✅ NOW validate (only if visible AND has rules)
       const row = store.rows.find((r: GridRow) => r.rowId === rowId)
       const rowCells = row?.cells.map((c: GridCell) => ({ columnName: c.columnName, value: c.value }))
       await validation.validateCellThrottled(rowId, columnName, value, rowCells)
-      const hasErrors = validation.validationErrors[rowId] && validation.validationErrors[rowId].length > 0
-      console.log('[DataGrid] Cell validated after edit:', { rowId, columnName, hasErrors })
     }
   }
 
   // Recalculate row height if auto row height is enabled
   if (store.isAutoRowHeightEnabled) {
-    console.log('[DataGrid] Recalculating row height:', { rowId })
     await recalculateRowHeightAfterEdit(rowId)
     await nextTick()
   }
@@ -1731,13 +1584,11 @@ async function handleCellEditComplete(rowId: string, columnName: string, value: 
   // 1. Adding newlines (Shift+Enter) → increases height
   // 2. Cancel edit (ESC) with previous newlines → restores original height
   else {
-    console.log('[DataGrid] Recalculating height for newlines (AutoRowHeight OFF):', { rowId })
     await recalculateRowHeightForNewlines(rowId)
   }
 }
 
 async function handleCellInput(rowId: string, columnName: string, value: any) {
-  console.log('[handleCellInput] Called:', { rowId, columnName, value, autoRowHeightEnabled: store.isAutoRowHeightEnabled })
 
   // Update cell value in store (needed for real-time validation and AutoRowHeight)
   // cancelEdit() will restore original value if user cancels
@@ -2420,24 +2271,51 @@ async function applyAutoRowHeightToAll() {
 }
 
 async function resetAllRowHeights() {
-  console.log('[resetAllRowHeights] START - AutoRowHeight is OFF, resetting to default height')
+  console.log('[resetAllRowHeights] START - AutoRowHeight is OFF, resetting heights based on newlines')
 
-  // When AutoRowHeight is OFF, reset ALL rows to default height
-  // Do NOT calculate heights based on validation text - that only happens when AutoRowHeight is ON
   let rowsProcessed = 0
-  const defaultHeight = 32
+  let rowsWithNewlines = 0
+  const defaultHeight = 32  // Default pre bunky bez newlines
 
-  store.rows.forEach((row: GridRow) => {
-    row.height = defaultHeight
+  // ✅ FIX: Prepočítať výšku pre KAŽDÝ riadok na základe newlines
+  for (const row of store.rows) {
+    let maxLines = 1
+
+    // Check all data cells for newlines
+    for (const cell of row.cells) {
+      if (cell.value == null) continue
+
+      const textValue = String(cell.value)
+      if (textValue.includes('\n')) {
+        // Count lines (split by \n)
+        const lines = textValue.split('\n').length
+        maxLines = Math.max(maxLines, lines)
+      }
+    }
+
+    // Calculate height: lineHeight (21px) * lines + vertical padding (10px)
+    if (maxLines > 1) {
+      const lineHeight = 21  // 14px font-size * 1.5 line-height
+      const verticalPadding = 10  // 5px top + 5px bottom
+      row.height = maxLines * lineHeight + verticalPadding
+      rowsWithNewlines++
+    } else {
+      // No newlines - use default height
+      row.height = defaultHeight
+    }
+
     rowsProcessed++
-  })
+  }
 
   console.log('[resetAllRowHeights] Summary:', {
     totalRows: rowsProcessed,
-    resetToHeight: defaultHeight
+    rowsWithNewlines: rowsWithNewlines,
+    rowsWithDefaultHeight: rowsProcessed - rowsWithNewlines,
+    defaultHeight: defaultHeight,
+    note: 'Rows with newlines have calculated height'
   })
 
-  console.log('[resetAllRowHeights] All row heights reset to default')
+  console.log('[resetAllRowHeights] All row heights calculated based on content')
 
   // CRITICAL: Wait for Vue to update DOM before forcing scroller update
   await nextTick()
@@ -2538,11 +2416,8 @@ async function checkBackendConnection() {
 
 // ✅ RIEŠENIE #6: Original function (to be wrapped with debounce)
 async function loadDataFromBackendOriginal() {
-  console.log('[loadDataFromBackend] 🔵 START')
-
   // ✅ RIEŠENIE #7: Guard - prevent concurrent data loads
   if (isProcessing.value) {
-    console.log('[loadDataFromBackend] ⚠️ Already processing, skipping')
     return
   }
 
@@ -2564,20 +2439,13 @@ async function loadDataFromBackendOriginal() {
   console.info('═══════════════════════════════════════════════════')
 
   try {
-    console.log('[loadDataFromBackend] Calling gridApi.getData()...')
     const response = await gridApi.getData()
-    console.log('[loadDataFromBackend] Response received:', {
-      success: response.success,
-      dataLength: response.data?.length,
-      hasError: !!response.error
-    })
 
     if (response.success && response.data) {
       // ✅ RIEŠENIE #4: Update loading state
       loadingState.value.operation = 'Processing data...'
       loadingState.value.total = response.data.length
 
-      console.log('[loadDataFromBackend] Converting data format...')
       // Convert backend data format to store format
       // Backend returns: { RowId, RowHeight, Checkbox, Data: { name, email, ... } }
       // Store expects: { __rowId, __rowHeight, __checkbox, name, email, ... }
@@ -2587,19 +2455,15 @@ async function loadDataFromBackendOriginal() {
         __checkbox: row.Checkbox,
         ...row.Data  // Spread Data dictionary to root level
       }))
-      console.log('[loadDataFromBackend] Converted rows:', rows.length)
 
       // ✅ RIEŠENIE #4: Update progress
       loadingState.value.progress = rows.length
       loadingState.value.percentage = 100
 
       // Clear validation tracking before loading new data (bulk load)
-      console.log('[loadDataFromBackend] Calling clearValidationTracking()...')
       store.clearValidationTracking()
 
-      console.log('[loadDataFromBackend] Calling store.loadRows()...')
       store.loadRows(rows)
-      console.log(`[loadDataFromBackend] ✅ Loaded ${rows.length} rows from backend`)
 
       // ✅ RIEŠENIE #4: Update operation
       loadingState.value.operation = 'Data loaded successfully'
@@ -2613,32 +2477,17 @@ async function loadDataFromBackendOriginal() {
       // Validate all cells after loading data if auto-validation is enabled
       if (store.config.autoValidate && store.config.enableValidation) {
         const rulesCount = validation?.validationRules?.value?.size || 0
-        console.log('[loadDataFromBackend] Auto-validation check:', {
-          autoValidate: store.config.autoValidate,
-          enableValidation: store.config.enableValidation,
-          rulesCount
-        })
 
         if (rulesCount > 0) {
-          console.log('[loadDataFromBackend] Starting auto-validation...')
-
           // ✅ RIEŠENIE #4B: Wait for DOM to stabilize before validating
           await nextTick()
-          console.log('[loadDataFromBackend] First nextTick done - rows mounted')
           await nextTick()
-          console.log('[loadDataFromBackend] Second nextTick done - scroller ready')
 
           // ✅ RIEŠENIE #4B: Additional small delay for stability
           await new Promise((resolve: (value: void | PromiseLike<void>) => void) => setTimeout(resolve, 50))
-          console.log('[loadDataFromBackend] Delay done - starting validation')
 
           await validateAllCellsInBatches()
-          console.log('[loadDataFromBackend] ✅ Auto-validation complete')
-        } else {
-          console.log('[loadDataFromBackend] ⚠️ Skipping validation - no rules defined yet')
         }
-      } else {
-        console.log('[loadDataFromBackend] ⚠️ Auto-validation disabled in config')
       }
     } else {
       // 📊 LOG: Data loading ERROR (API failed)
@@ -2659,8 +2508,6 @@ async function loadDataFromBackendOriginal() {
 
     // ✅ RIEŠENIE #4: Reset loading state
     loadingState.value.isLoading = false
-
-    console.log('[loadDataFromBackend] 🔵 END')
   }
 }
 

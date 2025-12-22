@@ -950,12 +950,6 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
    */
   function markCellValidated(rowId: string, columnName: string) {
     const cellKey = `${rowId}:${columnName}`
-    console.log('[dataGridStore] markCellValidated:', {
-      rowId,
-      columnName,
-      cellKey,
-      validatedCount: validatedCells.value.size
-    })
     validatedCells.value.add(cellKey)
     changedCellsSinceValidation.value.delete(cellKey)
   }
