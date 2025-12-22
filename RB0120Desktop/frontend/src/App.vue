@@ -109,23 +109,9 @@ onMounted(async () => {
     }
     console.log('[DEBUG] Step 2 COMPLETE')
 
-    // 3. Load validation rules
-    console.log('[DEBUG] Step 3: Loading validation rules...')
-    let rulesResponse
-    try {
-      rulesResponse = await gridApi.getValidationRules()
-      console.log('[DEBUG] Rules response received, success:', rulesResponse.success)
-    } catch (rulesError) {
-      console.error('[DEBUG] Rules call failed with error:', rulesError)
-      throw rulesError
-    }
-
-    if (rulesResponse.success && rulesResponse.data) {
-      const rulesCount = Array.isArray(rulesResponse.data) ? rulesResponse.data.length : 0
-      console.log(`✅ Loaded ${rulesCount} validation rules`)
-    } else {
-      console.warn('⚠️ Validation rules failed:', rulesResponse.error || 'No data')
-    }
+    // 3. Validation rules - not required automatically
+    // Backend will send validation rules to table if needed using AddValidationRulesAsync
+    console.log('[DEBUG] Step 3: Validation rules - waiting for backend to send rules if needed')
     console.log('[DEBUG] Step 3 COMPLETE')
 
     // 4. ✅ RIEŠENIE #1: Load ListBox configs from backend
@@ -220,6 +206,36 @@ onMounted(async () => {
       table4: table4Ref,
       table5: table5Ref
     }
+
+    // ✅ Register grid components for validation rules
+    // @ts-ignore - global window extension
+    window.__grids = {}
+    if (table1Ref.value) {
+      // @ts-ignore
+      window.__grids['table1'] = table1Ref.value
+      console.log('[App] Registered table1 to window.__grids')
+    }
+    if (table2Ref.value) {
+      // @ts-ignore
+      window.__grids['table2'] = table2Ref.value
+      console.log('[App] Registered table2 to window.__grids')
+    }
+    if (table3Ref.value) {
+      // @ts-ignore
+      window.__grids['table3'] = table3Ref.value
+      console.log('[App] Registered table3 to window.__grids')
+    }
+    if (table4Ref.value) {
+      // @ts-ignore
+      window.__grids['table4'] = table4Ref.value
+      console.log('[App] Registered table4 to window.__grids')
+    }
+    if (table5Ref.value) {
+      // @ts-ignore
+      window.__grids['table5'] = table5Ref.value
+      console.log('[App] Registered table5 to window.__grids')
+    }
+    console.log('✅ Grid components registered for validation rules')
 
     // @ts-ignore - global window extension
     window.__tableAPI = {
@@ -432,6 +448,15 @@ async function getTableData() {
 
 // Funkcia na pridanie validation rules pre tabuľku 1
 function addValidationRulesToTable1() {
+  // ✅ LOG POINT #4: Add validation rules START
+  console.log('═══════════════════════════════════════════════════')
+  console.log('[App] ADD VALIDATION RULES - START')
+  console.log(`  Table ready: ${!!table1Ref.value}`)
+  console.log(`  Validation ready: ${!!table1Ref.value?.validation}`)
+  console.log(`  Current ruleCount: ${(table1Ref.value?.validation as any)?.ruleCount?.value}`)
+  console.log(`  Timestamp: ${new Date().toISOString()}`)
+  console.log('═══════════════════════════════════════════════════')
+
   if (!table1Ref.value?.validation) {
     alert('❌ Tabuľka 1 nie je pripravená!')
     return
@@ -440,6 +465,7 @@ function addValidationRulesToTable1() {
   const { addValidationRule } = table1Ref.value.validation
 
   // Rule 1: Meno je povinné
+  console.log('[App] Adding rule 1/3: name Required')
   addValidationRule({
     columnName: 'name',
     ruleType: 'Required',
@@ -448,6 +474,7 @@ function addValidationRulesToTable1() {
   })
 
   // Rule 2: Email - validný formát
+  console.log('[App] Adding rule 2/3: email Regex')
   addValidationRule({
     columnName: 'email',
     ruleType: 'Regex',
@@ -457,6 +484,7 @@ function addValidationRulesToTable1() {
   })
 
   // Rule 3: Vek - rozsah 18-65
+  console.log('[App] Adding rule 3/3: age Range')
   addValidationRule({
     columnName: 'age',
     ruleType: 'Range',
@@ -465,6 +493,13 @@ function addValidationRulesToTable1() {
     maxValue: 65,
     severity: 'Warning'
   })
+
+  // ✅ LOG POINT #4: Add validation rules COMPLETE
+  console.log('═══════════════════════════════════════════════════')
+  console.log('[App] ADD VALIDATION RULES - COMPLETE')
+  console.log(`  New ruleCount: ${(table1Ref.value?.validation as any)?.ruleCount?.value}`)
+  console.log(`  Timestamp: ${new Date().toISOString()}`)
+  console.log('═══════════════════════════════════════════════════')
 
   alert('✅ Validation rules pridané pre Tabuľku 1!')
 }

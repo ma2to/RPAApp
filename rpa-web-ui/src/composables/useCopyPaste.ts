@@ -127,6 +127,10 @@ export function useCopyPaste() {
     let isFirstRow = true
     let headers: string[] = []
 
+    // ✅ FIX: Detekcia single-cell copy (neobsahuje tab ani newline, alebo len trailing newline)
+    const trimmedText = clipboardText.trim()
+    const isSingleCell = !trimmedText.includes('\t') && !trimmedText.includes('\n')
+
     for (let i = 0; i < clipboardText.length; i++) {
       const c = clipboardText[i]
       const next = i + 1 < clipboardText.length ? clipboardText[i + 1] : null
@@ -158,7 +162,8 @@ export function useCopyPaste() {
 
           if (isFirstRow) {
             // First row = headers (or auto-generate if not header-like)
-            if (isHeaderRow(currentRow)) {
+            // ✅ FIX: Poskytnúť isSingleCell flag
+            if (isHeaderRow(currentRow, isSingleCell)) {
               headers = [...currentRow]
             } else {
               // First row is data - generate column names
@@ -198,7 +203,8 @@ export function useCopyPaste() {
 
       if (isFirstRow && headers.length === 0) {
         // Only one row total - treat as headers or generate column names
-        if (isHeaderRow(currentRow)) {
+        // ✅ FIX: Poskytnúť isSingleCell flag
+        if (isHeaderRow(currentRow, isSingleCell)) {
           headers = [...currentRow]
         } else {
           headers = currentRow.map((_, idx) => `Column${idx + 1}`)
@@ -222,10 +228,38 @@ export function useCopyPaste() {
   }
 
   /**
-   * Checks if row contains headers (non-numeric values)
+   * Checks if row contains headers
+   * ✅ FIX: Použiť heuristiku namiesto jednoduchého isNaN check
+   * - Ak je to single-cell copy, NIKDY to nie je header
+   * - Ak má všetky bunky číselné hodnoty, NIE je to header
+   * - Ak má mix textu a čísel, ALE clipboard neobsahuje tab (single column), NIE je to header
    */
-  function isHeaderRow(values: string[]): boolean {
-    return values.some(v => v && isNaN(Number(v)))
+  function isHeaderRow(values: string[], isSingleCell: boolean = false): boolean {
+    // ✅ FIX: Single cell copy NIKDY nie je header
+    if (isSingleCell || values.length === 1) {
+      return false
+    }
+
+    // Ak všetky hodnoty sú čísla → nie je header
+    const allNumeric = values.every(v => !v || !isNaN(Number(v)))
+    if (allNumeric) {
+      return false
+    }
+
+    // Ak obsahuje ASPOŇ jednu hodnotu, ktorá vyzerá ako typický column header
+    // (obsahuje veľké písmená na začiatku, nemá veľa čísel, atď.)
+    const hasTypicalHeader = values.some(v => {
+      if (!v) return false
+
+      // Typický header: začína veľkým písmenom, krátky (< 30 znakov), bez špeciálnych znakov
+      const startsWithCapital = /^[A-Z]/.test(v)
+      const isShort = v.length < 30
+      const hasNoSpecialChars = !/[@#$%^&*()]/.test(v)
+
+      return startsWithCapital && isShort && hasNoSpecialChars && isNaN(Number(v))
+    })
+
+    return hasTypicalHeader
   }
 
   /**

@@ -864,6 +864,9 @@ async function handlePasteSelectedCells() {
       headers: result.headers
     })
 
+    // ✅ FIX: Filter data columns first (before calculating targetColIndex)
+    const dataColumnsOnly = allColumns.value.filter((col: GridColumn) => !col.specialType)
+
     // Find the target position (first selected cell or top-left)
     let targetRowIndex = 0
     let targetColIndex = 0
@@ -873,17 +876,20 @@ async function handlePasteSelectedCells() {
       const firstCellKey = Array.from(store.selectedCells)[0] as string
       const [firstRowId, firstColName] = firstCellKey.split(':')
       const firstRow = store.rows.find((r: GridRow) => r.rowId === firstRowId)
-      const firstColIdx = allColumns.value.findIndex((c: GridColumn) => c.name === firstColName)
+
+      // ✅ FIX: Find index in dataColumnsOnly instead of allColumns
+      const firstColIdx = dataColumnsOnly.findIndex((c: GridColumn) => c.name === firstColName)
 
       if (firstRow && firstColIdx !== -1) {
         targetRowIndex = firstRow.rowIndex
-        targetColIndex = firstColIdx
+        targetColIndex = firstColIdx  // ✅ Now this is index in dataColumnsOnly
       }
     }
 
     console.log('[DataGrid] Pasting at position:', {
       targetRowIndex,
-      targetColIndex
+      targetColIndex,
+      dataColumnsCount: dataColumnsOnly.length
     })
 
     // Paste data row by row, column by column
@@ -901,12 +907,12 @@ async function handlePasteSelectedCells() {
       Object.keys(rowData).forEach((columnKey: string, colOffset: number) => {
         const pasteColIndex = targetColIndex + colOffset
 
-        if (pasteColIndex >= allColumns.value.length) {
-          console.warn('[DataGrid] Paste column out of bounds:', { pasteColIndex, maxCols: allColumns.value.length })
+        if (pasteColIndex >= dataColumnsOnly.length) {
+          console.warn('[DataGrid] Paste column out of bounds:', { pasteColIndex, maxCols: dataColumnsOnly.length })
           return
         }
 
-        const targetColumn = allColumns.value[pasteColIndex]
+        const targetColumn = dataColumnsOnly[pasteColIndex]
         const value = rowData[columnKey]
 
         // Update cell value
@@ -922,6 +928,23 @@ async function handlePasteSelectedCells() {
     })
 
     console.log('[DataGrid] Paste complete')
+
+    // ✅ FIX: Trigger validation after paste if autoValidate is enabled
+    if (store.config.autoValidate && store.config.enableValidation && validation) {
+      const rulesCount = validation?.validationRules?.value?.size || 0
+
+      if (rulesCount > 0) {
+        console.log('[DataGrid] Paste complete - triggering auto-validation...')
+
+        // Wait for UI to update
+        await nextTick()
+
+        // Validate only changed cells (cells affected by paste)
+        await validateAllCellsInBatches()
+
+        console.log('[DataGrid] Paste validation complete')
+      }
+    }
   } else {
     console.error('[DataGrid] Paste failed:', result.message)
   }
@@ -988,17 +1011,81 @@ function calculateOptimalBatchSize(totalCells: number): number {
 async function validateAllCellsInBatches() {
   // ✅ RIEŠENIE #5: If validation is running, cancel it and wait for completion
   if (isValidating.value) {
-    console.log('[validateAllCellsInBatches] ⚠️ Validation already in progress, cancelling previous validation...')
+    // ✅ LOG POINT #1: Pred while loop wait - diagnostic info
+    console.log('═══════════════════════════════════════════════════')
+    console.log('[validateAllCellsInBatches] ⚠️ WAIT START')
+    console.log(`  isValidating: ${isValidating.value}`)
+    console.log(`  Timestamp: ${new Date().toISOString()}`)
+    console.log(`  Stack trace:`)
+    console.log(new Error().stack)
+    console.log('═══════════════════════════════════════════════════')
+
+    console.log('[validateAllCellsInBatches] Cancelling previous validation...')
     validationCancelled = true
 
-    // Wait for previous validation to finish (max 5 seconds)
-    const startWait = Date.now()
-    while (isValidating.value && Date.now() - startWait < 5000) {
-      await new Promise((resolve: (value: void | PromiseLike<void>) => void) => setTimeout(resolve, 100))
+    // ✅ FIX: Async polling s OPRAVENOU deadlock detection
+    const waitForValidation = async (maxWaitMs: number = 5000): Promise<boolean> => {
+      const startWait = Date.now()
+      let iterations = 0
+
+      while (isValidating.value && Date.now() - startWait < maxWaitMs) {
+        iterations++
+        console.log(`[waitForValidation] Waiting iteration ${iterations}, elapsed: ${Date.now() - startWait}ms, isValidating: ${isValidating.value}`)
+
+        // Yield to UI thread
+        await nextTick()
+        await new Promise((resolve: (value: void | PromiseLike<void>) => void) => setTimeout(resolve, 100))
+      }
+
+      // ✅ CRITICAL FIX: Check AFTER loop exits (not inside loop!)
+      // Loop exits when: (1) isValidating becomes false, OR (2) timeout reached
+      // If timeout reached but isValidating is STILL true → DEADLOCK!
+      if (isValidating.value) {
+        // Loop exited due to timeout, but isValidating is STILL true → DEADLOCK DETECTED!
+        console.error('═══════════════════════════════════════════════════')
+        console.error(`[waitForValidation] ❌ DEADLOCK DETECTED after ${Date.now() - startWait}ms`)
+        console.error(`  Iterations: ${iterations}`)
+        console.error(`  isValidating was NEVER reset to false`)
+        console.error(`  This indicates validation hung or crashed without cleanup`)
+        console.error('═══════════════════════════════════════════════════')
+
+        // ✅ FORCE RESET to break deadlock
+        isValidating.value = false
+        console.error('[waitForValidation] Forced isValidating=false to break deadlock')
+
+        // ✅ Log to C# backend for diagnostics
+        try {
+          if ((window as any).chrome?.webview) {
+            (window as any).chrome.webview.postMessage(JSON.stringify({
+              type: 'error',
+              source: 'DataGrid.waitForValidation',
+              error: 'Validation deadlock detected - isValidating was never reset',
+              iterations: iterations,
+              elapsedMs: Date.now() - startWait,
+              timestamp: new Date().toISOString()
+            }))
+          }
+        } catch { }
+
+        return false  // Validation NOT ready
+      }
+
+      console.log(`[waitForValidation] ✅ Validation completed after ${Date.now() - startWait}ms (${iterations} iterations)`)
+      return true  // Validation ready
     }
 
-    if (isValidating.value) {
-      console.error('[validateAllCellsInBatches] ❌ Previous validation did not finish in time')
+    const validationReady = await waitForValidation(5000)
+
+    // ✅ LOG POINT #1: Po while loop wait - result
+    console.log('═══════════════════════════════════════════════════')
+    console.log('[validateAllCellsInBatches] WAIT END')
+    console.log(`  validationReady: ${validationReady}`)
+    console.log(`  isValidating after wait: ${isValidating.value}`)
+    console.log(`  Timestamp: ${new Date().toISOString()}`)
+    console.log('═══════════════════════════════════════════════════')
+
+    if (!validationReady) {
+      console.error('[validateAllCellsInBatches] ❌ WAIT FAILED - aborting')
       return
     }
   }
@@ -1010,20 +1097,26 @@ async function validateAllCellsInBatches() {
 
   try {
     console.log('[validateAllCellsInBatches] 🔍 START', {
-      enableValidation: store.config.enableValidation,
+      enableValidation: store?.config?.enableValidation ?? false,
       hasValidation: !!validation,
-      totalRows: store.rows.length,
-      totalColumns: store.columns.length
+      totalRows: store?.rows?.length ?? 0,
+      totalColumns: store?.columns?.length ?? 0
     })
 
     // 📊 LOG: Validation START
     console.info('═══════════════════════════════════════════════════')
     console.info('🔍 VALIDATION START')
-    console.info(`   Rows: ${store.rows.length}, Columns: ${store.columns.length}`)
+    console.info(`   Rows: ${store?.rows?.length ?? 0}, Columns: ${store?.columns?.length ?? 0}`)
     console.info('═══════════════════════════════════════════════════')
 
-    if (!store.config.enableValidation || !validation) {
-      console.log('[validateAllCellsInBatches] ⚠️ SKIPPED - validation not enabled or not available')
+    // ✅ FIX: Comprehensive validation checks
+    if (!store || !store.config || !store.rows || !validation) {
+      console.log('[validateAllCellsInBatches] ⚠️ SKIPPED - store or validation not initialized')
+      return
+    }
+
+    if (!store.config.enableValidation) {
+      console.log('[validateAllCellsInBatches] ⚠️ SKIPPED - validation not enabled')
       return
     }
 
@@ -1037,7 +1130,7 @@ async function validateAllCellsInBatches() {
     }
 
     console.log('[validateAllCellsInBatches] 🔍 Columns with rules:', {
-      totalColumns: store.columns.length,
+      totalColumns: store?.columns?.length ?? 0,
       columnsWithRules: columnsWithRules.size,
       columns: Array.from(columnsWithRules)
     })
@@ -1105,8 +1198,8 @@ async function validateAllCellsInBatches() {
       const validationPromises = batch.map(({ rowId, columnName }: { rowId: string; columnName: string }) => {
         // ✅ RIEŠENIE #3: Use O(1) Map.get() instead of O(n) array.find()
         const row = store.getRow(rowId)
-        if (!row) {
-          console.warn('[validateAllCellsInBatches] ⚠️ Row not found:', rowId)
+        if (!row || !row.cells) {
+          console.warn('[validateAllCellsInBatches] ⚠️ Row not found or has no cells:', rowId)
           return Promise.resolve()
         }
 
@@ -1158,7 +1251,8 @@ async function validateAllCellsInBatches() {
     // 📊 LOG: Validation SUCCESS
     console.info('═══════════════════════════════════════════════════')
     console.info(`✅ VALIDATION SUCCESS - ${validatedCount} cells validated`)
-    console.info(`   Total errors: ${validation.validationErrors.value.length}`)
+    const errorCount = validation?.validationErrors?.value?.length ?? 0
+    console.info(`   Total errors: ${errorCount}`)
     console.info('═══════════════════════════════════════════════════')
   } catch (error) {
     // 📊 LOG: Validation ERROR
@@ -1398,13 +1492,25 @@ watch(() => props.columns, (newColumns) => {
 watch(() => validation?.ruleCount?.value ?? 0, async (newCount, oldCount) => {
   const rulesSize = validation?.validationRules?.value?.size || 0
 
-  console.log('[WATCHER] Validation rules changed!', {
-    ruleCount: newCount,
-    oldCount,
-    hasRules: rulesSize > 0,
-    hasData: store.rows.length > 0,
-    autoValidateEnabled: store.config.autoValidate
-  })
+  // ✅ LOG POINT #2: RuleCount watcher start - enhanced diagnostics
+  console.log('═══════════════════════════════════════════════════')
+  console.log('[WATCHER] VALIDATION RULES CHANGED - START')
+  console.log(`  Old count: ${oldCount} → New count: ${newCount}`)
+  console.log(`  Rules size: ${rulesSize}`)
+
+  // ✅ FIX: Safe access s optional chaining a nullish coalescing
+  const rowCount = store?.rows?.length ?? 0
+  console.log(`  Rows: ${rowCount}`)
+  console.log(`  autoValidate: ${store?.config?.autoValidate ?? false}`)
+  console.log(`  isValidating: ${isValidating.value}`)
+  console.log(`  Timestamp: ${new Date().toISOString()}`)
+  console.log('═══════════════════════════════════════════════════')
+
+  // ✅ FIX: Pridať guard check pre store existenciu
+  if (!store || !store.rows) {
+    console.warn('[WATCHER] Store not initialized yet, skipping validation')
+    return
+  }
 
   // Only auto-validate if:
   // 1. Rules exist
@@ -1433,10 +1539,56 @@ watch(() => validation?.ruleCount?.value ?? 0, async (newCount, oldCount) => {
     console.log('[WATCHER] Second nextTick done')
 
     await validateAllCellsInBatches()
-    console.log('[WATCHER] ✅ Auto-validation completed after adding rules')
+
+    // ✅ LOG POINT #2: RuleCount watcher end - success
+    console.log('═══════════════════════════════════════════════════')
+    console.log('[WATCHER] VALIDATION RULES CHANGED - SUCCESS')
+    console.log(`  Timestamp: ${new Date().toISOString()}`)
+    console.log('═══════════════════════════════════════════════════')
   } catch (error) {
-    console.error('[WATCHER] ❌ Error during auto-validation:', error)
+    // ✅ LOG POINT #2: RuleCount watcher end - failed
+    console.log('═══════════════════════════════════════════════════')
+    console.error('[WATCHER] VALIDATION RULES CHANGED - FAILED')
+    console.error(`  Error: ${error}`)
+    console.log('═══════════════════════════════════════════════════')
+
+    // ✅ RIEŠENIE #3: CRITICAL - Force reset isValidating to prevent permanent deadlock
+    isValidating.value = false
+    console.error('[WATCHER] Forced isValidating=false after error')
+
+    // ✅ Show error to user
+    alert(`Auto-validation failed: ${error instanceof Error ? error.message : String(error)}`)
+
+    // ✅ Log to C# backend for crash diagnostics
+    try {
+      if ((window as any).chrome?.webview) {
+        (window as any).chrome.webview.postMessage(JSON.stringify({
+          type: 'error',
+          source: 'DataGrid.ruleCount.watcher',
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          timestamp: new Date().toISOString()
+        }))
+      }
+    } catch { }
   }
+})
+
+// ✅ LOG POINT #3: Watch isValidating state changes for diagnostics
+watch(() => isValidating.value, (newVal, oldVal) => {
+  console.log('═══════════════════════════════════════════════════')
+  console.log('[WATCH isValidating] STATE CHANGED')
+  console.log(`  ${oldVal} → ${newVal}`)
+  console.log(`  Timestamp: ${new Date().toISOString()}`)
+
+  // ✅ Show stack trace to identify who changed isValidating
+  const stack = new Error().stack
+  if (stack) {
+    const stackLines = stack.split('\n').slice(1, 5)
+    console.log(`  Call stack:`)
+    stackLines.forEach(line => console.log(`    ${line.trim()}`))
+  }
+  console.log('═══════════════════════════════════════════════════')
 })
 
 // ✅ RIEŠENIE #4: Deep watch REMOVED - validácia je explicitne volaná v loadDataFromBackend() a v ruleCount watch

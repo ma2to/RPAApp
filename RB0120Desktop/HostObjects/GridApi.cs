@@ -985,11 +985,235 @@ public partial class GridApi
             return JsonSerializer.Serialize(new { success = false, error = ex.Message });
         }
     }
+
+    // ===== VALIDATION RULES METHODS =====
+
+    /// <summary>
+    /// ✅ Zasiela všetky validation rules do tabuľky
+    /// Všeobecná metóda - funguje pre akúkoľvek tabuľku
+    /// </summary>
+    /// <param name="tableId">ID tabuľky (napr. "table1", "table2")</param>
+    /// <param name="rulesJson">JSON array s validation rules</param>
+    public async Task<string> AddValidationRulesAsync(string tableId, string rulesJson)
+    {
+        try
+        {
+            _logger?.LogInformation($"[GridApi] AddValidationRulesAsync called for table: {tableId}");
+            _logger?.LogDebug($"[GridApi] Rules JSON: {rulesJson}");
+
+            // Parse rules
+            var rules = JsonSerializer.Deserialize<List<ValidationRule>>(rulesJson);
+
+            if (rules == null || rules.Count == 0)
+            {
+                return JsonSerializer.Serialize(new { success = false, error = "No rules provided" });
+            }
+
+            // Zaslať pravidlá do frontendu
+            var jsCode = $@"
+                (function() {{
+                    try {{
+                        const tableId = {JsonSerializer.Serialize(tableId)};
+                        const rules = {rulesJson};
+
+                        // Nájsť tabuľku podľa ID
+                        const gridComponent = window.__grids?.[tableId];
+                        if (!gridComponent || !gridComponent.validation) {{
+                            console.error('[AddValidationRules] Grid not found:', tableId);
+                            return false;
+                        }}
+
+                        // Pridať všetky pravidlá
+                        rules.forEach(rule => {{
+                            gridComponent.validation.addValidationRule(rule);
+                        }});
+
+                        console.log('[AddValidationRules] Added', rules.length, 'rules to', tableId);
+                        return true;
+                    }} catch (err) {{
+                        console.error('[AddValidationRules] Error:', err);
+                        return false;
+                    }}
+                }})()
+            ";
+
+            var result = await _webView.ExecuteScriptAsync(jsCode);
+
+            return JsonSerializer.Serialize(new {
+                success = true,
+                message = $"Added {rules.Count} validation rules to table {tableId}"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "[GridApi] AddValidationRulesAsync failed");
+            return JsonSerializer.Serialize(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// ✅ Zasiela jedno validation rule do tabuľky
+    /// Všeobecná metóda - funguje pre akúkoľvek tabuľku
+    /// </summary>
+    /// <param name="tableId">ID tabuľky</param>
+    /// <param name="ruleJson">JSON s validation rule</param>
+    public async Task<string> AddValidationRuleAsync(string tableId, string ruleJson)
+    {
+        try
+        {
+            _logger?.LogInformation($"[GridApi] AddValidationRuleAsync called for table: {tableId}");
+
+            // Zaslať pravidlo do frontendu
+            var jsCode = $@"
+                (function() {{
+                    try {{
+                        const tableId = {JsonSerializer.Serialize(tableId)};
+                        const rule = {ruleJson};
+
+                        const gridComponent = window.__grids?.[tableId];
+                        if (!gridComponent || !gridComponent.validation) {{
+                            console.error('[AddValidationRule] Grid not found:', tableId);
+                            return false;
+                        }}
+
+                        gridComponent.validation.addValidationRule(rule);
+                        console.log('[AddValidationRule] Added rule to', tableId, rule);
+                        return true;
+                    }} catch (err) {{
+                        console.error('[AddValidationRule] Error:', err);
+                        return false;
+                    }}
+                }})()
+            ";
+
+            var result = await _webView.ExecuteScriptAsync(jsCode);
+
+            return JsonSerializer.Serialize(new {
+                success = true,
+                message = $"Added validation rule to table {tableId}"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "[GridApi] AddValidationRuleAsync failed");
+            return JsonSerializer.Serialize(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// ✅ Zruší všetky validation rules na tabuľke
+    /// Všeobecná metóda - funguje pre akúkoľvek tabuľku
+    /// </summary>
+    /// <param name="tableId">ID tabuľky</param>
+    public async Task<string> DeleteValidationRulesAsync(string tableId)
+    {
+        try
+        {
+            _logger?.LogInformation($"[GridApi] DeleteValidationRulesAsync called for table: {tableId}");
+
+            var jsCode = $@"
+                (function() {{
+                    try {{
+                        const tableId = {JsonSerializer.Serialize(tableId)};
+
+                        const gridComponent = window.__grids?.[tableId];
+                        if (!gridComponent || !gridComponent.validation) {{
+                            console.error('[DeleteValidationRules] Grid not found:', tableId);
+                            return false;
+                        }}
+
+                        gridComponent.validation.validationRules.value.clear();
+                        gridComponent.validation.ruleCount.value++;
+                        console.log('[DeleteValidationRules] Cleared all rules from', tableId);
+                        return true;
+                    }} catch (err) {{
+                        console.error('[DeleteValidationRules] Error:', err);
+                        return false;
+                    }}
+                }})()
+            ";
+
+            var result = await _webView.ExecuteScriptAsync(jsCode);
+
+            return JsonSerializer.Serialize(new {
+                success = true,
+                message = $"Deleted all validation rules from table {tableId}"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "[GridApi] DeleteValidationRulesAsync failed");
+            return JsonSerializer.Serialize(new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// ✅ Zruší konkrétne validation rule z tabuľky podľa názvu stĺpca
+    /// Všeobecná metóda - funguje pre akúkoľvek tabuľku
+    /// </summary>
+    /// <param name="tableId">ID tabuľky</param>
+    /// <param name="ruleName">Názov pravidla (column name)</param>
+    public async Task<string> DeleteValidationRuleAsync(string tableId, string ruleName)
+    {
+        try
+        {
+            _logger?.LogInformation($"[GridApi] DeleteValidationRuleAsync called for table: {tableId}, rule: {ruleName}");
+
+            var jsCode = $@"
+                (function() {{
+                    try {{
+                        const tableId = {JsonSerializer.Serialize(tableId)};
+                        const ruleName = {JsonSerializer.Serialize(ruleName)};
+
+                        const gridComponent = window.__grids?.[tableId];
+                        if (!gridComponent || !gridComponent.validation) {{
+                            console.error('[DeleteValidationRule] Grid not found:', tableId);
+                            return false;
+                        }}
+
+                        gridComponent.validation.validationRules.value.delete(ruleName);
+                        gridComponent.validation.ruleCount.value++;
+                        console.log('[DeleteValidationRule] Deleted rule', ruleName, 'from', tableId);
+                        return true;
+                    }} catch (err) {{
+                        console.error('[DeleteValidationRule] Error:', err);
+                        return false;
+                    }}
+                }})()
+            ";
+
+            var result = await _webView.ExecuteScriptAsync(jsCode);
+
+            return JsonSerializer.Serialize(new {
+                success = true,
+                message = $"Deleted validation rule '{ruleName}' from table {tableId}"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "[GridApi] DeleteValidationRuleAsync failed");
+            return JsonSerializer.Serialize(new { success = false, error = ex.Message });
+        }
+    }
 }
 
 // Request/Response DTOs
 public record ImportRequest(List<GridRow> Data);
 public record ValidationRulesRequest(List<ValidationRuleDTO> Rules);
+
+/// <summary>
+/// Validation Rule model
+/// </summary>
+public class ValidationRule
+{
+    public string ColumnName { get; set; } = "";
+    public string RuleType { get; set; } = "";  // "Required", "Regex", "Range", "Custom"
+    public string ErrorMessage { get; set; } = "";
+    public string? RegexPattern { get; set; }
+    public object? MinValue { get; set; }
+    public object? MaxValue { get; set; }
+    public string Severity { get; set; } = "Error";  // "Info", "Warning", "Error", "Critical"
+}
 public record ExportOptions
 {
     public bool OnlyFiltered { get; set; } = false;

@@ -1023,6 +1023,12 @@ export const useDataGridStore = (storeId: string = 'dataGrid') => {
     let skippedNoRulesCells = 0  // ✅ RIEŠENIE #3: Track cells skipped due to no rules
 
     for (const row of rows.value) {
+      // ✅ FIX: Guard check pre row.cells existenciu
+      if (!row || !row.cells) {
+        console.warn('[getCellsNeedingValidation] Row has no cells array:', row?.rowId)
+        continue
+      }
+
       // ✅ RIEŠENIE #2: Check if row is empty (only in VISIBLE columns)
       const visibleCells = row.cells.filter(cell => columnsToValidate.has(cell.columnName))
       const isEmpty = visibleCells.every(cell =>

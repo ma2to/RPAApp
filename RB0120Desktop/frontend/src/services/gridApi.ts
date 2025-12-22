@@ -13,7 +13,6 @@ declare global {
       ExportData(options: string): Promise<string>
       GetConfig(): Promise<string>
       SetValidationRules(jsonRules: string): Promise<string>
-      GetValidationRules(): Promise<string>
       GetColumns(): Promise<string>
       HealthCheck(): Promise<string>
     }
@@ -81,24 +80,53 @@ class GridApiService {
    * Call gridApi method (WebView2 mode with postMessage bridge)
    */
   private async callHostApi<T>(method: string, ...args: string[]): Promise<ApiResponse<T>> {
+    const startTime = Date.now()
+    console.log(`[GridAPI] → Calling ${method}`, args.length > 0 ? args : '')
+
     try {
       if (!window.gridApi) {
         throw new Error('Grid API not available')
       }
 
-      console.log(`[GridAPI] Sending request: ${method}`)
       const hostApi = window.gridApi
       const resultJson = await (hostApi as any)[method](...args)
 
       // Parse JSON response from C#
       const result = JSON.parse(resultJson)
+
+      console.log(`[GridAPI] ← ${method} completed in ${Date.now() - startTime}ms`)
       return result as ApiResponse<T>
     } catch (error) {
-      console.error(`[GridAPI] ${method} failed:`, error)
+      const duration = Date.now() - startTime
+      console.error(`[GridAPI] ✘ ${method} FAILED after ${duration}ms:`, error)
+
+      // Log to C# backend for centralized crash analysis
+      try {
+        await this.logError(method, error)
+      } catch { }
+
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
       }
+    }
+  }
+
+  /**
+   * Log error to C# backend for centralized crash analysis
+   */
+  private async logError(method: string, error: any) {
+    // Call C# logging endpoint via postMessage
+    if (window.chrome?.webview) {
+      try {
+        window.chrome.webview.postMessage(JSON.stringify({
+          type: 'error',
+          method,
+          error: error.toString(),
+          stack: error.stack,
+          timestamp: new Date().toISOString()
+        }))
+      } catch { }
     }
   }
 
@@ -181,16 +209,6 @@ class GridApiService {
     }
     const jsonRules = JSON.stringify({ rules })
     return this.callHostApi<void>('SetValidationRules', jsonRules)
-  }
-
-  /**
-   * Get validation rules
-   */
-  async getValidationRules(): Promise<ApiResponse<ValidationRule[]>> {
-    if (!this.isHostMode) {
-      return { success: false, error: 'Grid API not available' }
-    }
-    return this.callHostApi<ValidationRule[]>('GetValidationRules')
   }
 
   /**

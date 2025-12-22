@@ -42,7 +42,8 @@ public sealed partial class MainWindow : Window
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 30,
                 outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
-                shared: true  // Allow multiple loggers to write to same file
+                shared: true,  // Allow multiple loggers to write to same file
+                flushToDiskInterval: TimeSpan.FromSeconds(1)  // Flush every 1 second for crash safety
             )
             .CreateLogger();
 
@@ -479,6 +480,25 @@ public sealed partial class MainWindow : Window
                     });
 
                     Log("[Navigation Completed] All initialization complete - waiting for user interaction");
+
+                    // Enhanced diagnostic logging
+                    _fileLogger.Information("=================================================================");
+                    _fileLogger.Information("[Initialization Complete]");
+                    _fileLogger.Information($"WebView2 Version: {webView.CoreWebView2.Environment.BrowserVersionString}");
+                    _fileLogger.Information($"Process ID: {System.Diagnostics.Process.GetCurrentProcess().Id}");
+                    _fileLogger.Information($"Memory Usage: {System.Diagnostics.Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024} MB");
+                    _fileLogger.Information("=================================================================");
+
+                    // Periodic health check logging (every 30 seconds)
+                    var healthCheckTimer = new System.Threading.Timer(_ =>
+                    {
+                        try
+                        {
+                            _fileLogger.Information("[Health] App running, Memory: {0} MB",
+                                System.Diagnostics.Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024);
+                        }
+                        catch { }
+                    }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
                 }
                 else
                 {
@@ -573,6 +593,35 @@ public sealed partial class MainWindow : Window
             {
                 PropertyNameCaseInsensitive = true
             };
+
+            // Check if this is an error report from frontend
+            using (var doc = System.Text.Json.JsonDocument.Parse(message))
+            {
+                if (doc.RootElement.TryGetProperty("type", out var typeProperty) &&
+                    typeProperty.GetString() == "error")
+                {
+                    // This is a frontend error report
+                    var errorMethod = doc.RootElement.TryGetProperty("method", out var methodProp) ? methodProp.GetString() : "Unknown";
+                    var errorMessage = doc.RootElement.TryGetProperty("error", out var errorProp) ? errorProp.GetString() : "Unknown error";
+                    var errorStack = doc.RootElement.TryGetProperty("stack", out var stackProp) ? stackProp.GetString() : "";
+                    var errorTimestamp = doc.RootElement.TryGetProperty("timestamp", out var timestampProp) ? timestampProp.GetString() : "";
+
+                    _fileLogger.Error("=================================================================");
+                    _fileLogger.Error("[FRONTEND ERROR REPORT]");
+                    _fileLogger.Error($"Method: {errorMethod}");
+                    _fileLogger.Error($"Error: {errorMessage}");
+                    _fileLogger.Error($"Timestamp: {errorTimestamp}");
+                    if (!string.IsNullOrEmpty(errorStack))
+                    {
+                        _fileLogger.Error($"Stack: {errorStack}");
+                    }
+                    _fileLogger.Error("=================================================================");
+
+                    Log($"[Frontend Error] {errorMethod} failed: {errorMessage}");
+                    return; // Don't process as API request
+                }
+            }
+
             var request = System.Text.Json.JsonSerializer.Deserialize<ApiRequest>(message, jsonOptions);
 
             if (request == null)
@@ -776,19 +825,50 @@ public sealed partial class MainWindow : Window
         Debug.WriteLine($"[ProcessFailed] Kind: {e.ProcessFailedKind}, Reason: {e.Reason}, Exit: {e.ExitCode}");
         Console.WriteLine($"[ProcessFailed] Kind: {e.ProcessFailedKind}, Reason: {e.Reason}, Exit: {e.ExitCode}");
 
-        // Try to show error to user if possible
-        try
+        // IMMEDIATE log flush - ensure logs are written before recovery attempt
+        Serilog.Log.CloseAndFlush();
+
+        // Show error dialog to user
+        this.DispatcherQueue?.TryEnqueue(async () =>
         {
-            this.DispatcherQueue?.TryEnqueue(() =>
+            try
             {
-                Log($"[ProcessFailed] WebView2 process crashed - attempting recovery");
-                // Optionally: Show error dialog or attempt reload
-            });
-        }
-        catch (Exception ex)
-        {
-            _fileLogger.Error($"[ProcessFailed] Failed to enqueue UI update: {ex.Message}");
-        }
+                var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
+                {
+                    Title = "WebView2 Process Failed",
+                    Content = $"The application encountered a critical error:\n\n" +
+                              $"Kind: {e.ProcessFailedKind}\n" +
+                              $"Reason: {e.Reason}\n" +
+                              $"Exit Code: {e.ExitCode}\n\n" +
+                              $"The application will attempt to restart.",
+                    PrimaryButtonText = "Restart",
+                    CloseButtonText = "Exit",
+                    XamlRoot = this.Content.XamlRoot
+                };
+
+                var result = await dialog.ShowAsync();
+
+                if (result == Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary)
+                {
+                    // Attempt restart
+                    _fileLogger.Information("[ProcessFailed] User chose to restart");
+                    Application.Current.Exit();  // Clean exit - OS will restart if configured
+                    // Or implement in-process restart logic
+                }
+                else
+                {
+                    // User chose to exit
+                    _fileLogger.Information("[ProcessFailed] User chose to exit");
+                    Application.Current.Exit();
+                }
+            }
+            catch (Exception ex)
+            {
+                _fileLogger.Error($"[ProcessFailed] Failed to show dialog: {ex.Message}");
+                // Force exit as last resort
+                Application.Current.Exit();
+            }
+        });
     }
 
     private void OnWindowClosed(object sender, WindowEventArgs args)

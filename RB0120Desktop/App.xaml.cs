@@ -34,7 +34,8 @@ public partial class App : Application
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 30,
                 outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
-                shared: true  // Allow multiple loggers to write to same file
+                shared: true,  // Allow multiple loggers to write to same file
+                flushToDiskInterval: TimeSpan.FromSeconds(1)  // Flush every 1 second for crash safety
             )
             .CreateLogger();
 
@@ -193,6 +194,14 @@ public partial class App : Application
 
         Debug.WriteLine($"[App] UNHANDLED EXCEPTION: {e.Exception?.Message}");
         Debug.WriteLine($"[App] Stack: {e.Exception?.StackTrace}");
+
+        // CRITICAL: Flush logs IMMEDIATELY before app crashes
+        try
+        {
+            Serilog.Log.CloseAndFlush();
+            System.Threading.Thread.Sleep(500);  // Give time for flush
+        }
+        catch { }
 
         // Mark as handled to prevent immediate crash (give time to log)
         e.Handled = true;
