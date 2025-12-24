@@ -16,7 +16,8 @@
       "Bash(dir node_modulesvue-virtual-scroller)",
       "Bash(grep:*)",
       "Bash(dir \"D:\\www\\RB0120APP\\RPAApp\\RPAApp\\rpa-web-ui\\dist\")",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(done)"
     ]
   }
 }
